@@ -536,8 +536,8 @@ def _mostrar_pieza_dialog(ruta: str, nombre: str, tipo: str) -> None:
 _ICONOS_TIPO = {"Audio": "🎵", "Video": "🎬", "PDF": "📄"}
 
 
-_ANCHOS_BASE_TABLA_PIEZAS = [1, 2, 1.8, 2, 1]
-_ANCHO_COL_PREDICCION = 1.3
+_ANCHOS_BASE_TABLA_PIEZAS = [1, 1.5, 1.3, 1.5, 0.7]
+_ANCHO_COL_PREDICCION = 1.8
 _ANCHO_COL_ACCION = 1.1
 
 
@@ -588,7 +588,7 @@ def _tabla_con_miniaturas(df_con_ruta: pd.DataFrame, key_prefix: str, models: di
                     f"{_ICONOS_TIPO.get(tipo, '📁')}</div>",
                     unsafe_allow_html=True,
                 )
-        c_archivo.write(nombre[:35] + ("..." if len(nombre) > 35 else ""))
+        c_archivo.write(nombre[:22] + ("..." if len(nombre) > 22 else ""))
         c_anun.write(fila.get("anunciante", ""))
         c_ver.write(fila.get("version", ""))
         c_tipo.write(tipo)

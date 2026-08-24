@@ -556,7 +556,7 @@ def _galeria_piezas(df_con_ruta: pd.DataFrame, key_prefix: str, por_fila: int = 
             ruta = fila.get("ruta_local")
             tipo = fila.get("tipo_archivo")
             nombre = str(fila.get("archivo", ""))
-            with col:
+            with col, st.container(border=True):
                 if tipo == "Imagen" and ruta and os.path.exists(ruta):
                     st.image(ruta, use_container_width=True)
                 else:
@@ -566,7 +566,7 @@ def _galeria_piezas(df_con_ruta: pd.DataFrame, key_prefix: str, por_fila: int = 
                         unsafe_allow_html=True,
                     )
                 st.caption(nombre if len(nombre) <= 28 else nombre[:25] + "...")
-                if st.button("Ver completo", key=f"{key_prefix}_{idx}", use_container_width=True):
+                if st.button("🔍 Ver completo", key=f"{key_prefix}_{idx}", use_container_width=True):
                     if ruta and os.path.exists(ruta):
                         _mostrar_pieza_dialog(ruta, nombre, tipo)
                     else:

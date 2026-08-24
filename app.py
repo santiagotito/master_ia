@@ -535,7 +535,9 @@ def _mostrar_pieza_dialog(ruta: str, nombre: str, tipo: str) -> None:
 _ICONOS_TIPO = {"Audio": "🎵", "Video": "🎬", "PDF": "📄"}
 
 
-_ANCHOS_TABLA_PIEZAS = [1, 2.2, 2, 2.2, 1, 2.2, 1.1]
+_ANCHOS_BASE_TABLA_PIEZAS = [1, 2, 1.8, 2, 1]
+_ANCHO_COL_PREDICCION = 1.3
+_ANCHO_COL_ACCION = 1.1
 
 
 def _tabla_con_miniaturas(df_con_ruta: pd.DataFrame, key_prefix: str) -> None:
@@ -544,17 +546,18 @@ def _tabla_con_miniaturas(df_con_ruta: pd.DataFrame, key_prefix: str) -> None:
     (no permite poner un botón real adentro de una celda, y su propia
     columna de imagen no deja interceptar el clic para nada propio,
     confirmado probándolo). Se arma a mano con st.columns por fila, con
-    los datos clave visibles (el detalle completo con todas las
-    dimensiones/confianzas sigue en la tabla de arriba)."""
+    una columna propia por cada dimensión clasificada (Tipo de Campaña,
+    Modalidad, Grado, Carrera), no un solo texto combinado."""
     if "ruta_local" not in df_con_ruta.columns or df_con_ruta.empty:
         return
 
-    columnas_pred = [TARGET_COLS[cn] for cn in TARGET_COLS if TARGET_COLS[cn] in df_con_ruta.columns]
+    dims_presentes = [cn for cn in TARGET_COLS if TARGET_COLS[cn] in df_con_ruta.columns]
+    anchos = _ANCHOS_BASE_TABLA_PIEZAS + [_ANCHO_COL_PREDICCION] * len(dims_presentes) + [_ANCHO_COL_ACCION]
+    etiquetas_dim = [TARGET_LABELS[cn].split("— ", 1)[-1] for cn in dims_presentes]
 
-    encabezado = st.columns(_ANCHOS_TABLA_PIEZAS)
-    for col, titulo in zip(
-        encabezado, ["Miniatura", "Archivo", "Anunciante", "Versión", "Tipo", "Predicción", ""]
-    ):
+    encabezado = st.columns(anchos)
+    titulos = ["Miniatura", "Archivo", "Anunciante", "Versión", "Tipo"] + etiquetas_dim + [""]
+    for col, titulo in zip(encabezado, titulos):
         col.markdown(f"**{titulo}**")
 
     filas = df_con_ruta.reset_index(drop=True)
@@ -562,7 +565,10 @@ def _tabla_con_miniaturas(df_con_ruta: pd.DataFrame, key_prefix: str) -> None:
         ruta = fila.get("ruta_local")
         tipo = fila.get("tipo_archivo")
         nombre = str(fila.get("archivo", ""))
-        c_mini, c_archivo, c_anun, c_ver, c_tipo, c_pred, c_accion = st.columns(_ANCHOS_TABLA_PIEZAS)
+        cols_fila = st.columns(anchos)
+        c_mini, c_archivo, c_anun, c_ver, c_tipo = cols_fila[:5]
+        cols_dim = cols_fila[5:5 + len(dims_presentes)]
+        c_accion = cols_fila[-1]
         with c_mini:
             if tipo == "Imagen" and ruta and os.path.exists(ruta):
                 st.image(ruta, use_container_width=True)
@@ -576,7 +582,9 @@ def _tabla_con_miniaturas(df_con_ruta: pd.DataFrame, key_prefix: str) -> None:
         c_anun.write(fila.get("anunciante", ""))
         c_ver.write(fila.get("version", ""))
         c_tipo.write(tipo)
-        c_pred.write(", ".join(f"{c}: {fila[c]}" for c in columnas_pred if pd.notna(fila.get(c))))
+        for cn, col_dim in zip(dims_presentes, cols_dim):
+            valor = fila.get(TARGET_COLS[cn])
+            col_dim.write(valor if pd.notna(valor) else "—")
         with c_accion:
             if st.button("🔍 Ver", key=f"{key_prefix}_{idx}", use_container_width=True):
                 if ruta and os.path.exists(ruta):

@@ -75,33 +75,54 @@ def listar_piezas(folder_2026=None, meses=None):
         mes_path = os.path.join(folder_2026, mes_dir)
         if not os.path.isdir(mes_path):
             continue
+        piezas.extend(_recorrer_carpeta(mes_path, etiqueta_mes=mes_dir))
 
-        for root, _dirs, files in os.walk(mes_path):
-            for fname in sorted(files):
-                if fname.startswith('~') or fname.startswith('.') or fname.lower() == 'desktop.ini':
+    return piezas
+
+
+def listar_piezas_en(carpeta):
+    """Recorre `carpeta` de forma recursiva y devuelve las piezas
+    encontradas, sin asumir la estructura FOLDER_2026/{mes}/... de
+    `listar_piezas()` -- para cuando las piezas reales están en otra
+    ubicación del servidor (ej. un disco de red distinto, o una carpeta
+    de un proyecto puntual), no en la carpeta configurada por defecto."""
+    if not os.path.isdir(carpeta):
+        logger.warning("Carpeta no existe: %s", carpeta)
+        return []
+    return _recorrer_carpeta(carpeta, etiqueta_mes="")
+
+
+def _recorrer_carpeta(carpeta, etiqueta_mes):
+    """Recorrido recursivo compartido por `listar_piezas()` (una carpeta
+    por mes conocido) y `listar_piezas_en()` (una carpeta cualquiera) --
+    misma lógica de filtrado y manejo de errores en un solo lugar."""
+    piezas = []
+    for root, _dirs, files in os.walk(carpeta):
+        for fname in sorted(files):
+            if fname.startswith('~') or fname.startswith('.') or fname.lower() == 'desktop.ini':
+                continue
+
+            ruta = os.path.join(root, fname)
+            try:
+                tipo = clasificar_tipo(fname)
+                if tipo is None:
+                    logger.warning("Extensión no soportada, se omite: %s", fname)
+                    continue
+                if not os.path.isfile(ruta) or os.path.getsize(ruta) == 0:
+                    logger.warning("Archivo corrupto o vacío, se omite: %s", fname)
                     continue
 
-                ruta = os.path.join(root, fname)
-                try:
-                    tipo = clasificar_tipo(fname)
-                    if tipo is None:
-                        logger.warning("Extensión no soportada, se omite: %s", fname)
-                        continue
-                    if not os.path.isfile(ruta) or os.path.getsize(ruta) == 0:
-                        logger.warning("Archivo corrupto o vacío, se omite: %s", fname)
-                        continue
-
-                    anunciante, version = parse_filename(fname)
-                    piezas.append({
-                        'ruta': ruta,
-                        'archivo': fname,
-                        'mes': mes_dir,
-                        'tipo': tipo,
-                        'anunciante': anunciante,
-                        'version': version,
-                    })
-                except OSError:
-                    logger.warning("No se pudo leer el archivo, se omite: %s", fname, exc_info=True)
-                    continue
+                anunciante, version = parse_filename(fname)
+                piezas.append({
+                    'ruta': ruta,
+                    'archivo': fname,
+                    'mes': etiqueta_mes,
+                    'tipo': tipo,
+                    'anunciante': anunciante,
+                    'version': version,
+                })
+            except OSError:
+                logger.warning("No se pudo leer el archivo, se omite: %s", fname, exc_info=True)
+                continue
 
     return piezas

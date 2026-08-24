@@ -699,7 +699,7 @@ def page_carga_masiva() -> None:
                         df_subidas_vista,
                         use_container_width=True,
                         column_config={
-                            "miniatura": st.column_config.ImageColumn("Vista previa", width="small")
+                            "miniatura": st.column_config.ImageColumn("Vista previa", width="large")
                         },
                     )
             except Exception as exc:
@@ -739,7 +739,7 @@ def page_carga_masiva() -> None:
                         _agregar_miniaturas(df_2026.head(20)),
                         use_container_width=True,
                         column_config={
-                            "miniatura": st.column_config.ImageColumn("Vista previa", width="small")
+                            "miniatura": st.column_config.ImageColumn("Vista previa", width="large")
                         },
                     )
                     with open(output_file, "rb") as file:

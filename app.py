@@ -608,7 +608,13 @@ def page_carga_masiva() -> None:
     )
 
     with tab_subir:
-        st.caption("Subí imágenes, PDF, audio o video -- cada nombre de archivo debe seguir el formato `ANUNCIANTE - VERSIÓN(FORMATO).ext` para poder extraer el anunciante y la versión.")
+        st.caption(
+            "**Usá esta opción si tenés los archivos de las piezas en tu computadora** (imágenes, "
+            "PDF, audio o video). Subilos acá y se clasifican al toque. Importante: cada nombre de "
+            "archivo debe seguir el formato `ANUNCIANTE - VERSIÓN(FORMATO).ext` (ej. `PUCE - "
+            "MAESTRIA EN DERECHO(COMERCIAL).jpg`) -- de ahí se saca automáticamente el anunciante y "
+            "la versión de la pieza."
+        )
         archivos_subidos = st.file_uploader(
             "Piezas a clasificar",
             type=["jpg", "jpeg", "png", "pdf", "mp3", "mp4", "wmv", "gif"],
@@ -647,7 +653,14 @@ def page_carga_masiva() -> None:
                 st.error(str(exc))
 
     with tab_carpeta:
-        st.caption(f"Origen: `{PIEZAS_DIR}` · Clasificación SVM local, sin GPU -- las piezas que necesitarían Nivel 2 quedan marcadas, no clasificadas por LLM.")
+        st.caption(
+            "**Usá esta opción si las piezas ya están guardadas en el servidor de la app** (no en "
+            "tu computadora) -- no hace falta subir nada, solo tocar el botón y procesa todo lo que "
+            "encuentre en esa carpeta de una sola vez. Carpeta que va a escanear: "
+            f"`{PIEZAS_DIR}`. Si una pieza es de las que necesitan la revisión de IA (Nivel 2, más "
+            "compleja de clasificar), acá queda marcada para revisar aparte -- esta opción solo usa "
+            "el modelo rápido (ML)."
+        )
         if st.button("Procesar carpeta completa", type="primary", disabled=models is None):
             try:
                 with st.spinner("Procesando archivos e invocando `procesar_carpeta_piezas`..."):
@@ -678,7 +691,13 @@ def page_carga_masiva() -> None:
                 st.error(str(exc))
 
     with tab_excel:
-        uploaded = st.file_uploader("Dataset de inferencia", type=["xlsx", "csv"])
+        st.caption(
+            "**Usá esta opción si NO tenés los archivos de las piezas, pero sí tenés una planilla** "
+            "con la lista (por ejemplo, exportada de otro sistema) -- ahorra tener que subir "
+            "archivo por archivo. La planilla tiene que tener, como mínimo, una columna "
+            "`anunciante` y una columna `version` con el texto de cada pieza."
+        )
+        uploaded = st.file_uploader("Planilla con las piezas a clasificar (.xlsx o .csv)", type=["xlsx", "csv"])
         if uploaded is not None:
             df_upload = (
                 pd.read_excel(uploaded)

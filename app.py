@@ -648,6 +648,7 @@ def _tabla_con_miniaturas(
             columna_real = TARGET_COLS[cn]
             valor_actual = fila.get(columna_real)
             opciones = sorted(soporte_clases.get(columna_real, {}).keys())
+            confianza = fila.get(f"conf_{cn}")
             with col_dim:
                 if opciones:
                     if pd.notna(valor_actual) and valor_actual not in opciones:
@@ -663,6 +664,8 @@ def _tabla_con_miniaturas(
                 else:
                     st.write(valor_actual if pd.notna(valor_actual) else "—")
                     nuevo_valor = valor_actual
+                if pd.notna(confianza):
+                    st.caption(f"{float(confianza):.1f}% confianza")
             editado.at[idx, columna_real] = nuevo_valor
         with c_accion:
             if st.button("🔍 Ver", key=f"{key_prefix}_{idx}", use_container_width=True):

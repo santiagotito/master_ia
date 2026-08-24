@@ -528,11 +528,17 @@ def page_carga_masiva() -> None:
     with col_modelo:
         modo = st.radio(
             "Modelo a usar",
-            ["Nivel 1 (SVM) en vivo", "Híbrido (Nivel 1 + Nivel 2, ya calculado en Colab)"],
+            ["rapido", "hibrido"],
+            format_func=lambda k: {
+                "rapido": "⚡ Clasificar mis piezas ahora (rápido)",
+                "hibrido": "✅ Ver resultados completos (ya procesados con IA)",
+            }[k],
             help=(
-                "Nivel 1 corre acá mismo, sin GPU, en segundos. Híbrido lee el resultado del "
-                "modelo de lenguaje (Nivel 2) ya calculado en Colab -- esta app no tiene GPU "
-                "para ejecutarlo en vivo."
+                "\"Clasificar ahora\" analiza las piezas que subas en el momento, en segundos. "
+                "\"Ver resultados completos\" muestra las 1.414 piezas que ya se clasificaron antes "
+                "con una inteligencia artificial más avanzada, en un servidor con más capacidad -- "
+                "en este modo no se pueden subir piezas nuevas, porque esta app no tiene el "
+                "hardware necesario para correr esa IA en el momento."
             ),
         )
     with col_cols:
@@ -549,20 +555,22 @@ def page_carga_masiva() -> None:
 
     st.write("")
 
-    if modo.startswith("Híbrido"):
+    if modo == "hibrido":
         with st.container(border=True):
-            st.subheader("Predicciones híbridas (Nivel 1 + Nivel 2, calculadas en Colab)")
+            st.subheader("Resultados completos, ya procesados con IA")
             st.caption(
-                "Esta app corre localmente sin GPU: no puede ejecutar el LLM del Nivel 2 en vivo. "
-                "Este botón lee el Excel ya generado en Colab con el pipeline completo (Story 3.4)."
+                "Estas 1.414 piezas ya fueron analizadas antes con una inteligencia artificial más "
+                "avanzada, en un servidor con más capacidad. Acá podés consultar esos resultados, "
+                "pero en este modo no se pueden subir piezas nuevas -- para eso usá "
+                "\"Clasificar mis piezas ahora\"."
             )
-            if st.button("Cargar predicciones híbridas", type="primary"):
+            if st.button("Ver resultados completos", type="primary"):
                 try:
                     df_hibrido = _filtrar_columnas_seleccionadas(cargar_predicciones_hibridas(), columnas_sel)
                     st.session_state.last_batch_df = df_hibrido
                     st.session_state.last_batch_path = None
                     st.cache_data.clear()
-                    st.success(f"Predicciones híbridas cargadas: {len(df_hibrido)} piezas.")
+                    st.success(f"Resultados cargados: {len(df_hibrido)} piezas.")
                     st.dataframe(df_hibrido.head(20), use_container_width=True)
                 except FileNotFoundError as exc:
                     st.warning(str(exc))

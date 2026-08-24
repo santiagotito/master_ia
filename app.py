@@ -556,8 +556,13 @@ def _tabla_con_miniaturas(df_con_ruta: pd.DataFrame, key_prefix: str, models: di
     campo de texto libre, para no romper el catálogo cerrado (AD-4) que
     ya garantiza el resto del sistema. Devuelve una copia del DataFrame
     con los valores editados aplicados, para poder exportarlos."""
-    if "ruta_local" not in df_con_ruta.columns or df_con_ruta.empty:
+    if df_con_ruta.empty:
         return df_con_ruta
+    if "ruta_local" not in df_con_ruta.columns:
+        # Sin ruta_local no hay archivo real para mostrar (ej. viene de un
+        # lote subido en otra sesión, temporal ya borrado) -- se sigue
+        # mostrando la tabla igual, solo sin miniatura ni "Ver" funcional.
+        df_con_ruta = df_con_ruta.assign(ruta_local=None)
 
     dims_presentes = [cn for cn in TARGET_COLS if TARGET_COLS[cn] in df_con_ruta.columns]
     anchos = _ANCHOS_BASE_TABLA_PIEZAS + [_ANCHO_COL_PREDICCION] * len(dims_presentes) + [_ANCHO_COL_ACCION]
@@ -985,8 +990,12 @@ def page_matriz() -> None:
 
 
 def page_revision_manual() -> None:
+    models = get_models()
     st.title("Revisión manual")
-    st.caption("Cola de governance para predicciones con baja certeza.")
+    st.caption(
+        "Piezas donde el modelo rápido (ML) no quedó lo bastante seguro -- se juntan acá para que "
+        "alguien las revise y corrija a mano, en vez de dejarlas con una predicción dudosa."
+    )
     df, is_demo = dashboard_frame()
     conf_map = confidence_columns(df)
     if not conf_map:
@@ -1001,7 +1010,11 @@ def page_revision_manual() -> None:
     st.metric("Casos a revisar", len(cola))
     if is_demo:
         st.caption("Cola construida sobre la vista de referencia.")
-    st.dataframe(cola, use_container_width=True)
+
+    if not cola.empty:
+        st.caption("Corregí lo que haga falta en la tabla y exportá el resultado revisado.")
+        cola_editada = _tabla_con_miniaturas(cola, key_prefix="revision", models=models)
+        _boton_exportar_excel(cola_editada, key="descarga_revision", nombre_archivo="revision_manual.xlsx")
 
 
 def page_explorador() -> None:

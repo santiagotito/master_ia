@@ -154,37 +154,6 @@ def load_predictions_table() -> pd.DataFrame:
     return pd.DataFrame()
 
 
-def inventory_files() -> pd.DataFrame:
-    records = []
-    if not os.path.isdir(PIEZAS_DIR):
-        return pd.DataFrame()
-    for root, _, files in os.walk(PIEZAS_DIR):
-        for fname in files:
-            if fname.startswith(("~", ".")):
-                continue
-            ext = os.path.splitext(fname)[1].lower()
-            anunciante, version = parse_filename(fname)
-            records.append(
-                {
-                    "archivo": fname,
-                    "ruta": os.path.join(root, fname),
-                    "extension": ext,
-                    "tipo_archivo": {
-                        ".jpg": "Imagen",
-                        ".jpeg": "Imagen",
-                        ".png": "Imagen",
-                        ".pdf": "PDF",
-                        ".mp3": "Audio",
-                        ".mp4": "Video",
-                    }.get(ext, ext.upper() or "Otro"),
-                    "anunciante": anunciante,
-                    "version": version,
-                    "mes": os.path.basename(root),
-                }
-            )
-    return pd.DataFrame(records)
-
-
 def active_predictions() -> pd.DataFrame:
     if st.session_state.last_batch_df is not None and not st.session_state.last_batch_df.empty:
         return st.session_state.last_batch_df
@@ -1080,18 +1049,6 @@ def page_matriz() -> None:
             st.error(str(exc))
 
 
-def page_explorador() -> None:
-    st.title("Explorador de medios")
-    st.caption("Biblioteca de activos en disco, agrupada por tipo de archivo.")
-    inv = inventory_files()
-    if inv.empty:
-        st.info(f"No hay medios en `{PIEZAS_DIR}`.")
-        return
-    tipo = st.multiselect("Filtrar modalidad", sorted(inv["tipo_archivo"].unique()), default=None)
-    view = inv if not tipo else inv[inv["tipo_archivo"].isin(tipo)]
-    st.dataframe(view, use_container_width=True, hide_index=True)
-
-
 def page_exportacion() -> None:
     st.title("Exportación de reportes")
     st.caption("Descarga del Excel de predicciones generado por el lote.")
@@ -1202,7 +1159,6 @@ pages = {
         st.Page(page_matriz, title="Matriz de Clasificación", icon="🗂️"),
     ],
     "BIBLIOTECA DE ACTIVOS": [
-        st.Page(page_explorador, title="Explorador de Medios", icon="🖼️"),
         st.Page(page_exportacion, title="Exportación de Reportes", icon="📥"),
     ],
     "MLOPS & SYSTEM HEALTH": [

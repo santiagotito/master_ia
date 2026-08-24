@@ -683,29 +683,48 @@ def page_carga_masiva() -> None:
                 record_inference("TF-IDF", elapsed, True, f"{len(df_subidas)} piezas subidas")
                 if df_subidas.empty:
                     st.warning("Ninguno de los archivos subidos tiene una extensión reconocida.")
+                    st.session_state.pop("tabla_subidas_datos", None)
                 else:
                     df_subidas = _filtrar_columnas_seleccionadas(df_subidas, columnas_sel)
-                    # La miniatura se arma ANTES de tirar ruta_local (la
-                    # necesita para leer el archivo real) -- ruta_local en sí
-                    # apunta a una carpeta temporal que se borra al cerrar la
-                    # sesión, no tiene sentido mostrarla ni exportarla.
-                    df_subidas_vista = _agregar_miniaturas(df_subidas).drop(columns=["ruta_local"])
-                    df_subidas = df_subidas.drop(columns=["ruta_local"])
-                    st.session_state.last_batch_df = df_subidas
+                    st.session_state.last_batch_df = df_subidas.drop(columns=["ruta_local"])
                     st.session_state.last_batch_path = None
                     st.cache_data.clear()
-                    st.success(f"Clasificación completada: {len(df_subidas)} piezas.")
-                    st.dataframe(
-                        df_subidas_vista,
-                        use_container_width=True,
-                        column_config={
-                            "miniatura": st.column_config.ImageColumn("Vista previa", width="large")
-                        },
-                    )
+                    # Se guarda en session_state (con ruta_local incluido, para
+                    # poder abrir el archivo real al hacer clic en una fila) en
+                    # vez de mostrarlo acá directo: tocar una fila de la tabla
+                    # dispara un "rerun" de Streamlit, y en ese rerun
+                    # st.button() ya no vuelve a dar True -- si el resultado
+                    # viviera solo adentro de este `if`, desaparecería entero
+                    # al tocar una fila. Guardado en la sesión, sobrevive.
+                    st.session_state["tabla_subidas_datos"] = df_subidas
             except Exception as exc:
                 log_exception("Carga masiva / piezas subidas", exc)
                 record_inference("TF-IDF", 0, False, str(exc))
                 st.error(str(exc))
+
+        if st.session_state.get("tabla_subidas_datos") is not None:
+            df_con_ruta = st.session_state["tabla_subidas_datos"]
+            st.success(f"Clasificación completada: {len(df_con_ruta)} piezas.")
+            st.caption("Tocá una fila de la tabla para ver la imagen completa abajo.")
+            df_subidas_vista = _agregar_miniaturas(df_con_ruta).drop(columns=["ruta_local"])
+            evento = st.dataframe(
+                df_subidas_vista,
+                use_container_width=True,
+                column_config={
+                    "miniatura": st.column_config.ImageColumn("Vista previa", width="small")
+                },
+                on_select="rerun",
+                selection_mode="single-row",
+                key="tabla_subidas",
+            )
+            filas_sel = evento.selection.rows if evento and evento.selection else []
+            if filas_sel:
+                fila = df_con_ruta.iloc[filas_sel[0]]
+                ruta_img = fila.get("ruta_local")
+                if fila.get("tipo_archivo") == "Imagen" and ruta_img and os.path.exists(ruta_img):
+                    st.image(ruta_img, caption=fila.get("archivo"), width=500)
+                else:
+                    st.info("Esta pieza no es una imagen (o no se pudo abrir) -- no hay vista completa disponible.")
 
     with tab_carpeta:
         st.caption(
@@ -725,34 +744,58 @@ def page_carga_masiva() -> None:
                 record_inference("TF-IDF", elapsed, True, f"{len(df_2026)} archivos")
                 if df_2026.empty:
                     st.warning("No se encontraron archivos válidos.")
+                    st.session_state.pop("tabla_carpeta_datos", None)
                 else:
                     output_file = exportar_predicciones_excel(df_2026, output_path=OUTPUT_EXCEL_PATH)
                     df_2026 = _filtrar_columnas_seleccionadas(df_2026, columnas_sel)
                     st.session_state.last_batch_df = df_2026
                     st.session_state.last_batch_path = str(output_file)
                     st.cache_data.clear()
-                    st.success(f"Procesamiento completado: {len(df_2026)} registros.")
-                    # Miniaturas solo sobre las primeras 20 filas que se
-                    # muestran -- generarlas para las 1.414 piezas completas
-                    # sería lento y no se ven todas a la vez igual.
-                    st.dataframe(
-                        _agregar_miniaturas(df_2026.head(20)),
-                        use_container_width=True,
-                        column_config={
-                            "miniatura": st.column_config.ImageColumn("Vista previa", width="large")
-                        },
-                    )
-                    with open(output_file, "rb") as file:
-                        st.download_button(
-                            "Descargar Excel de predicciones",
-                            data=file,
-                            file_name="Predicciones_2026_ML.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        )
+                    # Igual que en "Subir piezas": se guarda en session_state
+                    # (con ruta_local, para poder abrir el archivo real al
+                    # hacer clic en una fila) porque tocar una fila dispara un
+                    # rerun donde st.button() ya no es True -- si el resultado
+                    # solo viviera adentro de este `if`, desaparecería.
+                    st.session_state["tabla_carpeta_datos"] = df_2026
             except Exception as exc:
                 log_exception("Carga masiva / carpeta", exc)
                 record_inference("TF-IDF", 0, False, str(exc))
                 st.error(str(exc))
+
+        if st.session_state.get("tabla_carpeta_datos") is not None:
+            df_2026 = st.session_state["tabla_carpeta_datos"]
+            st.success(f"Procesamiento completado: {len(df_2026)} registros.")
+            st.caption("Tocá una fila de la tabla para ver la imagen completa abajo.")
+            # Miniaturas solo sobre las primeras 20 filas que se muestran --
+            # generarlas para las 1.414 piezas completas sería lento y no se
+            # ven todas a la vez igual.
+            df_2026_vista = _agregar_miniaturas(df_2026.head(20))
+            evento = st.dataframe(
+                df_2026_vista.drop(columns=["ruta_local"], errors="ignore"),
+                use_container_width=True,
+                column_config={
+                    "miniatura": st.column_config.ImageColumn("Vista previa", width="small")
+                },
+                on_select="rerun",
+                selection_mode="single-row",
+                key="tabla_carpeta",
+            )
+            filas_sel = evento.selection.rows if evento and evento.selection else []
+            if filas_sel:
+                fila = df_2026_vista.iloc[filas_sel[0]]
+                ruta_img = fila.get("ruta_local")
+                if fila.get("tipo_archivo") == "Imagen" and ruta_img and os.path.exists(ruta_img):
+                    st.image(ruta_img, caption=fila.get("archivo"), width=500)
+                else:
+                    st.info("Esta pieza no es una imagen (o no se pudo abrir) -- no hay vista completa disponible.")
+            if os.path.exists(OUTPUT_EXCEL_PATH):
+                with open(OUTPUT_EXCEL_PATH, "rb") as file:
+                    st.download_button(
+                        "Descargar Excel de predicciones",
+                        data=file,
+                        file_name="Predicciones_2026_ML.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
 
     with tab_excel:
         st.caption(

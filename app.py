@@ -519,9 +519,11 @@ def _filtrar_columnas_seleccionadas(df: pd.DataFrame, columnas_sel: list[str]) -
 def _agregar_miniaturas(df: pd.DataFrame, col_ruta: str = "ruta_local") -> pd.DataFrame:
     """Agrega una columna "miniatura" al principio de la tabla con la imagen
     de cada pieza (solo tipo Imagen -- audio/video/PDF no tienen una vista
-    previa estática que tenga sentido). Se muestra con
-    `st.column_config.ImageColumn`, que ya trae el "click para ampliar"
-    integrado -- no hace falta programarlo aparte."""
+    previa estática que tenga sentido), mostrada con
+    `st.column_config.ImageColumn`. El zoom nativo de esa columna al hacer
+    clic queda chico y recortado (feedback real probándolo) y no se puede
+    ajustar desde acá -- la vista completa real se resuelve aparte, con
+    `_mostrar_imagen_dialog()` al seleccionar la fila."""
     if "tipo_archivo" not in df.columns or col_ruta not in df.columns:
         return df
 
@@ -543,6 +545,35 @@ def _agregar_miniaturas(df: pd.DataFrame, col_ruta: str = "ruta_local") -> pd.Da
     df = df.copy()
     df.insert(0, "miniatura", df.apply(_thumb, axis=1))
     return df
+
+
+@st.dialog("Vista completa", width="large")
+def _mostrar_imagen_dialog(ruta: str, nombre: str) -> None:
+    """Ventana modal centrada en pantalla con la imagen a tamaño completo --
+    `st.dialog` ya trae de fábrica la X para cerrar (arriba a la derecha) y
+    se cierra también con Esc, sin tener que programar ninguna de las dos
+    cosas a mano."""
+    st.image(ruta, caption=nombre, use_container_width=True)
+
+
+def _mostrar_fila_seleccionada(df_con_ruta: pd.DataFrame, filas_sel: list[int], estado_key: str) -> None:
+    """Abre el diálogo con la imagen completa cuando se selecciona una fila
+    nueva. Se compara contra la última fila ya mostrada (guardada en
+    session_state) para abrir el diálogo una sola vez por selección -- si
+    se abriera en cada rerun (incluido el que dispara el propio botón de
+    cerrar del diálogo), se volvería a abrir solo al cerrarlo."""
+    if not filas_sel:
+        return
+    idx = filas_sel[0]
+    if st.session_state.get(estado_key) == idx:
+        return
+    st.session_state[estado_key] = idx
+    fila = df_con_ruta.iloc[idx]
+    ruta_img = fila.get("ruta_local")
+    if fila.get("tipo_archivo") == "Imagen" and ruta_img and os.path.exists(ruta_img):
+        _mostrar_imagen_dialog(ruta_img, fila.get("archivo"))
+    else:
+        st.info("Esta pieza no es una imagen (o no se pudo abrir) -- no hay vista completa disponible.")
 
 
 def page_carga_masiva() -> None:
@@ -718,13 +749,7 @@ def page_carga_masiva() -> None:
                 key="tabla_subidas",
             )
             filas_sel = evento.selection.rows if evento and evento.selection else []
-            if filas_sel:
-                fila = df_con_ruta.iloc[filas_sel[0]]
-                ruta_img = fila.get("ruta_local")
-                if fila.get("tipo_archivo") == "Imagen" and ruta_img and os.path.exists(ruta_img):
-                    st.image(ruta_img, caption=fila.get("archivo"), width=500)
-                else:
-                    st.info("Esta pieza no es una imagen (o no se pudo abrir) -- no hay vista completa disponible.")
+            _mostrar_fila_seleccionada(df_con_ruta, filas_sel, "_ultima_fila_vista_subidas")
 
     with tab_carpeta:
         st.caption(
@@ -781,13 +806,7 @@ def page_carga_masiva() -> None:
                 key="tabla_carpeta",
             )
             filas_sel = evento.selection.rows if evento and evento.selection else []
-            if filas_sel:
-                fila = df_2026_vista.iloc[filas_sel[0]]
-                ruta_img = fila.get("ruta_local")
-                if fila.get("tipo_archivo") == "Imagen" and ruta_img and os.path.exists(ruta_img):
-                    st.image(ruta_img, caption=fila.get("archivo"), width=500)
-                else:
-                    st.info("Esta pieza no es una imagen (o no se pudo abrir) -- no hay vista completa disponible.")
+            _mostrar_fila_seleccionada(df_2026_vista, filas_sel, "_ultima_fila_vista_carpeta")
             if os.path.exists(OUTPUT_EXCEL_PATH):
                 with open(OUTPUT_EXCEL_PATH, "rb") as file:
                     st.download_button(

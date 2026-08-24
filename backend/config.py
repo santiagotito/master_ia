@@ -4,6 +4,7 @@ Ratifica las constantes ya usadas en PROYECTO/Clasificador_Piezas_ML.ipynb
 (celda 4) — no reinventa rutas ni columnas objetivo.
 """
 import os
+from pathlib import Path
 
 try:
     from google.colab import drive  # noqa: F401
@@ -11,16 +12,35 @@ try:
 except ImportError:
     IN_COLAB = False
 
+# Copia local reducida bundleada con la app (data/), usada cuando el Drive
+# real de RAM no está montado -- caso de un despliegue en un servidor (p.
+# ej. Railway) que no tiene acceso al G:\ de la máquina de desarrollo.
+_APP_DIR = Path(__file__).resolve().parent.parent
+_DATA_DIR_LOCAL = str(_APP_DIR / "data")
+# Ruta real confirmada del Drive de RAM montado localmente (Google Drive
+# Desktop) -- corregido en la Story 2.2, la ruta anterior era un
+# placeholder nunca validado y no existía.
+_DRIVE_RAM = r"G:\Mi unidad\1. RAM"
+
 if IN_COLAB:
     BASE_DIR = '/content/drive/MyDrive/1. RAM'
+elif os.path.isdir(_DRIVE_RAM):
+    BASE_DIR = _DRIVE_RAM
 else:
-    # Ruta real confirmada del Drive de RAM montado localmente (Google Drive
-    # Desktop) -- corregido en la Story 2.2, la ruta anterior era un
-    # placeholder nunca validado y no existía.
-    BASE_DIR = r"G:\Mi unidad\1. RAM"
+    # Sin Colab ni Drive de RAM montado (ej. servidor de despliegue): cae a
+    # la copia local bundleada en data/, igual que ya hace src/config.py.
+    BASE_DIR = _DATA_DIR_LOCAL
 
 EXCEL_PATH = os.path.join(BASE_DIR, "Subbase UIDE Oct 2025.xlsm")
-FOLDER_2026 = os.path.join(BASE_DIR, "2026", "2026")
+# El Drive real de RAM anida las carpetas de mes dos niveles adentro
+# (.../1. RAM/2026/2026/{mes}); la copia local bundleada en data/ solo
+# tiene un nivel (data/2026/{mes}) -- por eso el segundo "2026" solo se
+# agrega cuando BASE_DIR es el Drive real, no cuando cae al fallback local.
+FOLDER_2026 = (
+    os.path.join(BASE_DIR, "2026", "2026")
+    if BASE_DIR != _DATA_DIR_LOCAL
+    else os.path.join(BASE_DIR, "2026")
+)
 OUTPUT_PATH = os.path.join(BASE_DIR, "Predicciones_2026_ML.xlsx")
 
 # Excel con el pipeline híbrido completo (Nivel 1 + Nivel 2, Story 3.4),

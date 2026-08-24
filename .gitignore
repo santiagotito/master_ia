@@ -15,6 +15,7 @@ data/*.csv
 models/*.pkl
 !data/Subbase UIDE Oct 2025.xlsm
 !data/Predicciones_2026_ML.xlsx
+!data/Predicciones_2026_ML_hibrido.xlsx
 !models/model_pipelines.pkl
 
 # Streamlit

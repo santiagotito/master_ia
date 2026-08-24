@@ -574,6 +574,33 @@ def page_carga_masiva() -> None:
                     st.dataframe(df_hibrido.head(20), use_container_width=True)
                 except FileNotFoundError as exc:
                     st.warning(str(exc))
+
+        with st.expander("¿Necesitás clasificar piezas nuevas con IA (más preciso)?"):
+            st.markdown(
+                "Esta app pública no tiene la GPU que hace falta para correr la IA, así que ese "
+                "paso se hace aparte, en Google Colab (que sí presta GPU gratis). Son 3 pasos:\n\n"
+                "1. Un miembro del equipo abre el notebook del proyecto en Google Colab y lo corre "
+                "con GPU sobre las piezas nuevas -- esto genera un Excel con la clasificación "
+                "completa (ML + IA).\n"
+                "2. Descargá ese Excel de Colab.\n"
+                "3. Subilo acá abajo para verlo en esta app, sin esperar a que alguien actualice "
+                "la app entera."
+            )
+            subido_hibrido = st.file_uploader(
+                "Subir Excel ya clasificado con IA (de Colab)", type=["xlsx"], key="upload_hibrido"
+            )
+            if subido_hibrido is not None:
+                try:
+                    df_nuevo = pd.read_excel(subido_hibrido, sheet_name="Predicciones")
+                    df_nuevo = _filtrar_columnas_seleccionadas(df_nuevo, columnas_sel)
+                    st.session_state.last_batch_df = df_nuevo
+                    st.session_state.last_batch_path = None
+                    st.success(f"Resultados nuevos cargados: {len(df_nuevo)} piezas.")
+                    st.dataframe(df_nuevo.head(20), use_container_width=True)
+                except Exception as exc:
+                    st.error(
+                        f"No se pudo leer el archivo (¿tiene una hoja llamada 'Predicciones'?): {exc}"
+                    )
         return
 
     tab_subir, tab_carpeta, tab_excel = st.tabs(

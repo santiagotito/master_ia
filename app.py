@@ -39,7 +39,6 @@ from src.predictor import (
     parse_filename,
     predecir_lote_dataframe,
     predecir_pieza_single,
-    procesar_carpeta_personalizada,
     procesar_carpeta_piezas,
 )
 
@@ -820,26 +819,11 @@ def page_carga_masiva() -> None:
         carpeta_sel = st.selectbox("Seleccioná la carpeta a procesar", opciones_carpeta)
         meses_filtro = None if carpeta_sel == opcion_todas else [carpeta_sel]
 
-        with st.expander("¿Las piezas están en otra ubicación del servidor (no en la carpeta de arriba)?"):
-            ruta_personalizada = st.text_input(
-                "Ruta completa de esa carpeta en el servidor",
-                placeholder=r"ej. C:\otra_ubicacion\piezas",
-                help=(
-                    "Se recorre esa carpeta tal cual, de forma recursiva -- a diferencia del "
-                    "selector de arriba, acá NO hace falta que tenga carpetas de mes (ENE/FEB/...) "
-                    "adentro."
-                ),
-            ).strip()
-
         if st.button("Procesar carpeta completa", type="primary", disabled=models is None):
             try:
-                destino = ruta_personalizada or carpeta_sel
-                with st.spinner(f"Procesando `{destino}`..."):
+                with st.spinner(f"Procesando `{carpeta_sel}`..."):
                     t0 = time.perf_counter()
-                    if ruta_personalizada:
-                        df_2026 = procesar_carpeta_personalizada(models, ruta_personalizada)
-                    else:
-                        df_2026 = procesar_carpeta_piezas(models, folder_path=PIEZAS_DIR, meses=meses_filtro)
+                    df_2026 = procesar_carpeta_piezas(models, folder_path=PIEZAS_DIR, meses=meses_filtro)
                     elapsed = (time.perf_counter() - t0) * 1000
                 record_inference("TF-IDF", elapsed, True, f"{len(df_2026)} archivos")
                 if df_2026.empty:

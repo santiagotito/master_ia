@@ -80,22 +80,9 @@ def listar_piezas(folder_2026=None, meses=None):
     return piezas
 
 
-def listar_piezas_en(carpeta):
-    """Recorre `carpeta` de forma recursiva y devuelve las piezas
-    encontradas, sin asumir la estructura FOLDER_2026/{mes}/... de
-    `listar_piezas()` -- para cuando las piezas reales están en otra
-    ubicación del servidor (ej. un disco de red distinto, o una carpeta
-    de un proyecto puntual), no en la carpeta configurada por defecto."""
-    if not os.path.isdir(carpeta):
-        logger.warning("Carpeta no existe: %s", carpeta)
-        return []
-    return _recorrer_carpeta(carpeta, etiqueta_mes="")
-
-
 def _recorrer_carpeta(carpeta, etiqueta_mes):
-    """Recorrido recursivo compartido por `listar_piezas()` (una carpeta
-    por mes conocido) y `listar_piezas_en()` (una carpeta cualquiera) --
-    misma lógica de filtrado y manejo de errores en un solo lugar."""
+    """Recorrido recursivo de una carpeta de mes -- filtrado y manejo de
+    errores compartido por cada mes que recorre `listar_piezas()`."""
     piezas = []
     for root, _dirs, files in os.walk(carpeta):
         for fname in sorted(files):

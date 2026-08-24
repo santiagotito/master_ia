@@ -189,16 +189,6 @@ def procesar_carpeta_piezas(models, folder_path=None, meses=None):
     return _clasificar_piezas(models, piezas)
 
 
-def procesar_carpeta_personalizada(models, carpeta):
-    """Igual que `procesar_carpeta_piezas()`, pero para una ruta cualquiera
-    del servidor (no la carpeta configurada por defecto, `PIEZAS_DIR`) --
-    para cuando las piezas reales están en otra ubicación. No asume la
-    estructura de carpetas de mes: recorre `carpeta` de forma recursiva
-    directamente (ver `listar_piezas_en()`)."""
-    piezas = backend_ingesta.listar_piezas_en(carpeta)
-    return _clasificar_piezas(models, piezas)
-
-
 def clasificar_archivos_subidos(models, rutas_locales):
     """Clasifica piezas subidas por el usuario desde el navegador (ya
     guardadas en disco por `app.py` en una carpeta temporal) -- no depende

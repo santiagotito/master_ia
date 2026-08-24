@@ -902,23 +902,65 @@ def page_carga_masiva() -> None:
                         st.error(str(exc))
 
 
+_TIPO_PREVIEW_POR_EXT = {
+    ".jpg": "Imagen", ".jpeg": "Imagen", ".png": "Imagen", ".gif": "Imagen",
+    ".mp4": "Video", ".wmv": "Video",
+    ".mp3": "Audio",
+}
+
+
 def page_matriz() -> None:
     models = get_models()
     st.title("Matriz de clasificación")
-    st.caption("Inferencia individual sobre las dimensiones J, K, L y M.")
+    st.caption(
+        "Inferencia individual sobre las dimensiones J, K, L y M -- subí una pieza real (imagen, "
+        "audio o video) para ver cómo la clasifica, o probá con texto a mano."
+    )
+
+    archivo_subido = st.file_uploader(
+        "Subí una pieza real para clasificar (opcional)",
+        type=["jpg", "jpeg", "png", "gif", "mp3", "mp4", "wmv"],
+        key="matriz_archivo",
+    )
+
+    version_default = "MAESTRIA EN DERECHO CONSTITUCIONAL"
+    anunciante_default = "PONTIFICIA UNIV. CATOLICA DEL ECUADOR"
+    ruta_preview = None
+    tipo_preview = None
+
+    if archivo_subido is not None:
+        anunciante_default, version_default = parse_filename(archivo_subido.name)
+        ext = os.path.splitext(archivo_subido.name)[1].lower()
+        tipo_preview = _TIPO_PREVIEW_POR_EXT.get(ext)
+        tmp_dir = tempfile.mkdtemp(prefix="matriz_")
+        ruta_preview = os.path.join(tmp_dir, archivo_subido.name)
+        with open(ruta_preview, "wb") as f:
+            f.write(archivo_subido.getbuffer())
+        st.success(f"Se extrajo del nombre: **{anunciante_default}** — **{version_default}**")
 
     col1, col2 = st.columns(2)
     with col1:
-        version_input = st.text_input("Versión / texto de la pieza", value="MAESTRIA EN DERECHO CONSTITUCIONAL")
-        anunciante_input = st.text_input("Anunciante / universidad", value="PONTIFICIA UNIV. CATOLICA DEL ECUADOR")
+        version_input = st.text_input("Versión / texto de la pieza", value=version_default)
+        anunciante_input = st.text_input("Anunciante / universidad", value=anunciante_default)
     with col2:
-        file_name_parser = st.text_input(
-            "O simular desde nombre de archivo",
-            value="PONTIFICIA UNIV. CATOLICA DEL ECUADOR - MAESTRIA EN DERECHO CONSTITUCIONAL(1080x1080)-FB.mp4",
-        )
-        if st.button("Extraer datos del nombre"):
-            anunciante_parsed, version_parsed = parse_filename(file_name_parser)
-            st.info(f"**Anunciante:** {anunciante_parsed}\n\n**Versión:** {version_parsed}")
+        if ruta_preview and tipo_preview == "Imagen":
+            st.image(ruta_preview, caption=archivo_subido.name, use_container_width=True)
+        elif ruta_preview and tipo_preview == "Video":
+            st.video(ruta_preview)
+            st.caption(archivo_subido.name)
+        elif ruta_preview and tipo_preview == "Audio":
+            st.audio(ruta_preview)
+            st.caption(archivo_subido.name)
+        elif ruta_preview:
+            st.info("No hay vista previa disponible para este tipo de archivo, pero se puede clasificar igual.")
+        else:
+            file_name_parser = st.text_input(
+                "O simular desde nombre de archivo",
+                value="PONTIFICIA UNIV. CATOLICA DEL ECUADOR - MAESTRIA EN DERECHO CONSTITUCIONAL(1080x1080)-FB.mp4",
+            )
+            if st.button("Extraer datos del nombre"):
+                anunciante_parsed, version_parsed = parse_filename(file_name_parser)
+                st.info(f"**Anunciante:** {anunciante_parsed}\n\n**Versión:** {version_parsed}")
 
     if st.button("Clasificar activo", type="primary"):
         if models is None:

@@ -1,5 +1,6 @@
 import glob
 import importlib
+import io
 import os
 import sys
 import tempfile
@@ -540,20 +541,28 @@ _ANCHO_COL_PREDICCION = 1.3
 _ANCHO_COL_ACCION = 1.1
 
 
-def _tabla_con_miniaturas(df_con_ruta: pd.DataFrame, key_prefix: str) -> None:
+def _tabla_con_miniaturas(df_con_ruta: pd.DataFrame, key_prefix: str, models: dict | None = None) -> pd.DataFrame:
     """Tabla real, fila por fila, con la miniatura y el botón "Ver completo"
     integrados como columnas más -- no se puede armar así con st.dataframe
     (no permite poner un botón real adentro de una celda, y su propia
     columna de imagen no deja interceptar el clic para nada propio,
     confirmado probándolo). Se arma a mano con st.columns por fila, con
     una columna propia por cada dimensión clasificada (Tipo de Campaña,
-    Modalidad, Grado, Carrera), no un solo texto combinado."""
+    Modalidad, Grado, Carrera).
+
+    Cada valor de dimensión es un `st.selectbox` editable, con las
+    opciones tomadas del catálogo real que aprendió el modelo
+    (`soporte_clases`, las mismas clases con las que se entrenó) -- no un
+    campo de texto libre, para no romper el catálogo cerrado (AD-4) que
+    ya garantiza el resto del sistema. Devuelve una copia del DataFrame
+    con los valores editados aplicados, para poder exportarlos."""
     if "ruta_local" not in df_con_ruta.columns or df_con_ruta.empty:
-        return
+        return df_con_ruta
 
     dims_presentes = [cn for cn in TARGET_COLS if TARGET_COLS[cn] in df_con_ruta.columns]
     anchos = _ANCHOS_BASE_TABLA_PIEZAS + [_ANCHO_COL_PREDICCION] * len(dims_presentes) + [_ANCHO_COL_ACCION]
     etiquetas_dim = [TARGET_LABELS[cn].split("— ", 1)[-1] for cn in dims_presentes]
+    soporte_clases = (models or {}).get("soporte_clases", {})
 
     encabezado = st.columns(anchos)
     titulos = ["Miniatura", "Archivo", "Anunciante", "Versión", "Tipo"] + etiquetas_dim + [""]
@@ -561,6 +570,7 @@ def _tabla_con_miniaturas(df_con_ruta: pd.DataFrame, key_prefix: str) -> None:
         col.markdown(f"**{titulo}**")
 
     filas = df_con_ruta.reset_index(drop=True)
+    editado = filas.copy()
     for idx, fila in filas.iterrows():
         ruta = fila.get("ruta_local")
         tipo = fila.get("tipo_archivo")
@@ -583,8 +593,25 @@ def _tabla_con_miniaturas(df_con_ruta: pd.DataFrame, key_prefix: str) -> None:
         c_ver.write(fila.get("version", ""))
         c_tipo.write(tipo)
         for cn, col_dim in zip(dims_presentes, cols_dim):
-            valor = fila.get(TARGET_COLS[cn])
-            col_dim.write(valor if pd.notna(valor) else "—")
+            columna_real = TARGET_COLS[cn]
+            valor_actual = fila.get(columna_real)
+            opciones = sorted(soporte_clases.get(columna_real, {}).keys())
+            with col_dim:
+                if opciones:
+                    if pd.notna(valor_actual) and valor_actual not in opciones:
+                        opciones = [valor_actual] + opciones
+                    idx_sel = opciones.index(valor_actual) if valor_actual in opciones else 0
+                    nuevo_valor = st.selectbox(
+                        columna_real,
+                        opciones,
+                        index=idx_sel,
+                        key=f"{key_prefix}_{idx}_{cn}",
+                        label_visibility="collapsed",
+                    )
+                else:
+                    st.write(valor_actual if pd.notna(valor_actual) else "—")
+                    nuevo_valor = valor_actual
+            editado.at[idx, columna_real] = nuevo_valor
         with c_accion:
             if st.button("🔍 Ver", key=f"{key_prefix}_{idx}", use_container_width=True):
                 if ruta and os.path.exists(ruta):
@@ -592,6 +619,22 @@ def _tabla_con_miniaturas(df_con_ruta: pd.DataFrame, key_prefix: str) -> None:
                 else:
                     st.toast("No se pudo abrir el archivo.")
         st.divider()
+    return editado
+
+
+def _boton_exportar_excel(df: pd.DataFrame, key: str, nombre_archivo: str = "clasificacion_piezas.xlsx") -> None:
+    """Exporta a Excel el estado ACTUAL de la tabla (con las correcciones
+    manuales ya aplicadas, si se editó algo) -- se arma en memoria con
+    BytesIO, no queda ningún archivo temporal en el servidor."""
+    buffer = io.BytesIO()
+    df.drop(columns=["ruta_local"], errors="ignore").to_excel(buffer, index=False, engine="openpyxl")
+    st.download_button(
+        "📥 Descargar Excel",
+        data=buffer.getvalue(),
+        file_name=nombre_archivo,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key=key,
+    )
 
 
 def page_carga_masiva() -> None:
@@ -754,7 +797,9 @@ def page_carga_masiva() -> None:
         if st.session_state.get("tabla_subidas_datos") is not None:
             df_con_ruta = st.session_state["tabla_subidas_datos"]
             st.success(f"Clasificación completada: {len(df_con_ruta)} piezas.")
-            _tabla_con_miniaturas(df_con_ruta, key_prefix="gal_subidas")
+            st.caption("Podés corregir cualquier valor tocándolo en la tabla antes de exportar.")
+            df_subidas_editado = _tabla_con_miniaturas(df_con_ruta, key_prefix="gal_subidas", models=models)
+            _boton_exportar_excel(df_subidas_editado, key="descarga_subidas")
 
     with tab_carpeta:
         st.caption(
@@ -795,16 +840,27 @@ def page_carga_masiva() -> None:
         if st.session_state.get("tabla_carpeta_datos") is not None:
             df_2026 = st.session_state["tabla_carpeta_datos"]
             st.success(f"Procesamiento completado: {len(df_2026)} registros.")
+            st.caption(
+                f"Mostrando y editable: las primeras 20 de {len(df_2026)} piezas. Podés corregir "
+                "cualquier valor tocándolo en la tabla antes de exportar."
+            )
             df_2026_vista = df_2026.head(20)
-            _tabla_con_miniaturas(df_2026_vista, key_prefix="gal_carpeta")
-            if os.path.exists(OUTPUT_EXCEL_PATH):
-                with open(OUTPUT_EXCEL_PATH, "rb") as file:
-                    st.download_button(
-                        "Descargar Excel de predicciones",
-                        data=file,
-                        file_name="Predicciones_2026_ML.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    )
+            df_carpeta_editado = _tabla_con_miniaturas(df_2026_vista, key_prefix="gal_carpeta", models=models)
+            col_exp1, col_exp2 = st.columns(2)
+            with col_exp1:
+                _boton_exportar_excel(
+                    df_carpeta_editado, key="descarga_carpeta_vista",
+                    nombre_archivo="clasificacion_primeras_20.xlsx",
+                )
+            with col_exp2:
+                if os.path.exists(OUTPUT_EXCEL_PATH):
+                    with open(OUTPUT_EXCEL_PATH, "rb") as file:
+                        st.download_button(
+                            f"📥 Descargar Excel completo ({len(df_2026)} piezas, sin ediciones)",
+                            data=file,
+                            file_name="Predicciones_2026_ML.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        )
 
     with tab_excel:
         st.caption(

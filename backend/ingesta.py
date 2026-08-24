@@ -39,9 +39,15 @@ def clasificar_tipo(filename):
     return EXT_MAP.get(ext)
 
 
-def listar_piezas(folder_2026=None):
+def listar_piezas(folder_2026=None, meses=None):
     """Recorre FOLDER_2026/{mes}/... (solo carpetas de mes conocidas, ver
     MESES_MAP) y devuelve la lista de piezas reales.
+
+    `meses`: lista opcional de nombres de carpeta de mes a incluir (ej.
+    `["ABR"]`) -- si no se pasa, se recorren todos los meses conocidos.
+    Permite procesar una sola carpeta sin tener que pasar esa carpeta como
+    `folder_2026` (el recorrido siempre espera la carpeta RAÍZ que
+    contiene las carpetas de mes adentro, no una carpeta de mes directa).
 
     El recorrido dentro de cada mes es RECURSIVO: en producción no todos
     los meses organizan las piezas de la misma forma -- algunos las tienen
@@ -64,7 +70,8 @@ def listar_piezas(folder_2026=None):
         logger.warning("FOLDER_2026 no existe: %s", folder_2026)
         return piezas
 
-    for mes_dir in MESES_MAP:
+    meses_a_recorrer = meses if meses is not None else MESES_MAP
+    for mes_dir in meses_a_recorrer:
         mes_path = os.path.join(folder_2026, mes_dir)
         if not os.path.isdir(mes_path):
             continue

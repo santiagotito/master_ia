@@ -172,15 +172,20 @@ def _clasificar_piezas(models, piezas):
     return pd.DataFrame(records)
 
 
-def procesar_carpeta_piezas(models, folder_path=None):
+def procesar_carpeta_piezas(models, folder_path=None, meses=None):
     """Escanea la carpeta de piezas de 2026 (recursivo -- algunas
     universidades anidan las piezas varias carpetas adentro, ej.
     `MAR/{universidad}/{Prensa|VP}/`, bug real encontrado en la Story 1.1)
     y clasifica con Nivel 1 (SVM calibrado). No corre Nivel 2 (LLM): eso
     requiere GPU y corre en Colab -- ver `cargar_predicciones_hibridas()`
-    para leer ese resultado ya calculado."""
+    para leer ese resultado ya calculado.
+
+    `meses`: lista opcional de carpetas de mes a incluir (ej. `["ABR"]`),
+    para procesar solo una parte sin escanear todo -- `folder_path` sigue
+    siendo siempre la carpeta raíz (contiene las carpetas de mes adentro),
+    no una carpeta de mes directa (ver `listar_piezas()`)."""
     folder_path = folder_path or PIEZAS_DIR
-    piezas = backend_ingesta.listar_piezas(folder_path)
+    piezas = backend_ingesta.listar_piezas(folder_path, meses=meses)
     return _clasificar_piezas(models, piezas)
 
 

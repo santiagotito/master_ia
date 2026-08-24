@@ -804,17 +804,26 @@ def page_carga_masiva() -> None:
     with tab_carpeta:
         st.caption(
             "**Usá esta opción si las piezas ya están guardadas en el servidor de la app** (no en "
-            "tu computadora) -- no hace falta subir nada, solo tocar el botón y procesa todo lo que "
-            "encuentre en esa carpeta de una sola vez. Carpeta que va a escanear: "
-            f"`{PIEZAS_DIR}`. Si una pieza es de las que necesitan la revisión de IA (Nivel 2, más "
-            "compleja de clasificar), acá queda marcada para revisar aparte -- esta opción solo usa "
-            "el modelo rápido (ML)."
+            "tu computadora) -- no hace falta subir nada, elegí la carpeta y procesa todo lo que "
+            "encuentre ahí de una sola vez. Si una pieza es de las que necesitan la revisión de IA "
+            "(Nivel 2, más compleja de clasificar), acá queda marcada para revisar aparte -- esta "
+            "opción solo usa el modelo rápido (ML)."
         )
+        subcarpetas = (
+            sorted(d for d in os.listdir(PIEZAS_DIR) if os.path.isdir(os.path.join(PIEZAS_DIR, d)))
+            if os.path.isdir(PIEZAS_DIR)
+            else []
+        )
+        opcion_todas = f"Todas ({PIEZAS_DIR})"
+        opciones_carpeta = [opcion_todas] + subcarpetas
+        carpeta_sel = st.selectbox("Seleccioná la carpeta a procesar", opciones_carpeta)
+        meses_filtro = None if carpeta_sel == opcion_todas else [carpeta_sel]
+
         if st.button("Procesar carpeta completa", type="primary", disabled=models is None):
             try:
-                with st.spinner("Procesando archivos e invocando `procesar_carpeta_piezas`..."):
+                with st.spinner(f"Procesando `{carpeta_sel}`..."):
                     t0 = time.perf_counter()
-                    df_2026 = procesar_carpeta_piezas(models, folder_path=PIEZAS_DIR)
+                    df_2026 = procesar_carpeta_piezas(models, folder_path=PIEZAS_DIR, meses=meses_filtro)
                     elapsed = (time.perf_counter() - t0) * 1000
                 record_inference("TF-IDF", elapsed, True, f"{len(df_2026)} archivos")
                 if df_2026.empty:

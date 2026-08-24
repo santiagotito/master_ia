@@ -1,4 +1,3 @@
-import base64
 import glob
 import importlib
 import os
@@ -516,64 +515,62 @@ def _filtrar_columnas_seleccionadas(df: pd.DataFrame, columnas_sel: list[str]) -
     return df.drop(columns=drop_cols) if drop_cols else df
 
 
-def _agregar_miniaturas(df: pd.DataFrame, col_ruta: str = "ruta_local") -> pd.DataFrame:
-    """Agrega una columna "miniatura" al principio de la tabla con la imagen
-    de cada pieza (solo tipo Imagen -- audio/video/PDF no tienen una vista
-    previa estática que tenga sentido), mostrada con
-    `st.column_config.ImageColumn`. El zoom nativo de esa columna al hacer
-    clic queda chico y recortado (feedback real probándolo) y no se puede
-    ajustar desde acá -- la vista completa real se resuelve aparte, con
-    `_mostrar_imagen_dialog()` al seleccionar la fila."""
-    if "tipo_archivo" not in df.columns or col_ruta not in df.columns:
-        return df
-
-    def _thumb(row):
-        if row.get("tipo_archivo") != "Imagen":
-            return None
-        ruta = row.get(col_ruta)
-        if not ruta or not os.path.exists(ruta):
-            return None
-        try:
-            with open(ruta, "rb") as f:
-                datos = f.read()
-            ext = os.path.splitext(ruta)[1].lower().lstrip(".")
-            mime = "jpeg" if ext == "jpg" else ext
-            return f"data:image/{mime};base64,{base64.b64encode(datos).decode('ascii')}"
-        except Exception:
-            return None
-
-    df = df.copy()
-    df.insert(0, "miniatura", df.apply(_thumb, axis=1))
-    return df
-
-
 @st.dialog("Vista completa", width="large")
-def _mostrar_imagen_dialog(ruta: str, nombre: str) -> None:
-    """Ventana modal centrada en pantalla con la imagen a tamaño completo --
-    `st.dialog` ya trae de fábrica la X para cerrar (arriba a la derecha) y
-    se cierra también con Esc, sin tener que programar ninguna de las dos
-    cosas a mano."""
-    st.image(ruta, caption=nombre, use_container_width=True)
-
-
-def _mostrar_fila_seleccionada(df_con_ruta: pd.DataFrame, filas_sel: list[int], estado_key: str) -> None:
-    """Abre el diálogo con la imagen completa cuando se selecciona una fila
-    nueva. Se compara contra la última fila ya mostrada (guardada en
-    session_state) para abrir el diálogo una sola vez por selección -- si
-    se abriera en cada rerun (incluido el que dispara el propio botón de
-    cerrar del diálogo), se volvería a abrir solo al cerrarlo."""
-    if not filas_sel:
-        return
-    idx = filas_sel[0]
-    if st.session_state.get(estado_key) == idx:
-        return
-    st.session_state[estado_key] = idx
-    fila = df_con_ruta.iloc[idx]
-    ruta_img = fila.get("ruta_local")
-    if fila.get("tipo_archivo") == "Imagen" and ruta_img and os.path.exists(ruta_img):
-        _mostrar_imagen_dialog(ruta_img, fila.get("archivo"))
+def _mostrar_pieza_dialog(ruta: str, nombre: str, tipo: str) -> None:
+    """Ventana modal centrada en pantalla con la pieza completa -- imagen,
+    audio o video según corresponda. `st.dialog` ya trae de fábrica la X
+    para cerrar (arriba a la derecha) y se cierra también con Esc, sin
+    tener que programar ninguna de las dos cosas a mano."""
+    if tipo == "Imagen":
+        st.image(ruta, use_container_width=True)
+    elif tipo == "Video":
+        st.video(ruta)
+    elif tipo == "Audio":
+        st.audio(ruta)
     else:
-        st.info("Esta pieza no es una imagen (o no se pudo abrir) -- no hay vista completa disponible.")
+        st.info("No hay vista previa disponible para este tipo de archivo.")
+    st.caption(nombre)
+
+
+_ICONOS_TIPO = {"Audio": "🎵", "Video": "🎬", "PDF": "📄"}
+
+
+def _galeria_piezas(df_con_ruta: pd.DataFrame, key_prefix: str, por_fila: int = 6) -> None:
+    """Miniaturas clickeables de verdad (botones nativos de Streamlit, no la
+    columna de imagen de st.dataframe): esa columna tiene su propio zoom
+    integrado que no se puede interceptar ni redirigir -- clickear la
+    miniatura ahí simplemente no llega nunca a nuestro código (confirmado
+    probándolo: la fila ni se seleccionaba). Acá el clic es un botón real,
+    así que si abre la ventana modal, para imagen, audio y video."""
+    if "ruta_local" not in df_con_ruta.columns or df_con_ruta.empty:
+        return
+    st.caption("Tocá una miniatura para ver la pieza completa (imagen, audio o video).")
+    filas = df_con_ruta.reset_index(drop=True)
+    for inicio in range(0, len(filas), por_fila):
+        cols = st.columns(por_fila)
+        for offset, col in enumerate(cols):
+            idx = inicio + offset
+            if idx >= len(filas):
+                break
+            fila = filas.iloc[idx]
+            ruta = fila.get("ruta_local")
+            tipo = fila.get("tipo_archivo")
+            nombre = str(fila.get("archivo", ""))
+            with col:
+                if tipo == "Imagen" and ruta and os.path.exists(ruta):
+                    st.image(ruta, use_container_width=True)
+                else:
+                    st.markdown(
+                        f"<div style='font-size:2.4rem; text-align:center; padding:14px 0;'>"
+                        f"{_ICONOS_TIPO.get(tipo, '📁')}</div>",
+                        unsafe_allow_html=True,
+                    )
+                st.caption(nombre if len(nombre) <= 28 else nombre[:25] + "...")
+                if st.button("Ver completo", key=f"{key_prefix}_{idx}", use_container_width=True):
+                    if ruta and os.path.exists(ruta):
+                        _mostrar_pieza_dialog(ruta, nombre, tipo)
+                    else:
+                        st.toast("No se pudo abrir el archivo.")
 
 
 def page_carga_masiva() -> None:
@@ -736,20 +733,8 @@ def page_carga_masiva() -> None:
         if st.session_state.get("tabla_subidas_datos") is not None:
             df_con_ruta = st.session_state["tabla_subidas_datos"]
             st.success(f"Clasificación completada: {len(df_con_ruta)} piezas.")
-            st.caption("Para ver una imagen completa: marcá el casillero (✓) al principio de la fila -- NO hagas clic/doble clic en la miniatura chiquita, esa vista no se puede agrandar bien.")
-            df_subidas_vista = _agregar_miniaturas(df_con_ruta).drop(columns=["ruta_local"])
-            evento = st.dataframe(
-                df_subidas_vista,
-                use_container_width=True,
-                column_config={
-                    "miniatura": st.column_config.ImageColumn("Vista previa", width="small")
-                },
-                on_select="rerun",
-                selection_mode="single-row",
-                key="tabla_subidas",
-            )
-            filas_sel = evento.selection.rows if evento and evento.selection else []
-            _mostrar_fila_seleccionada(df_con_ruta, filas_sel, "_ultima_fila_vista_subidas")
+            st.dataframe(df_con_ruta.drop(columns=["ruta_local"]), use_container_width=True)
+            _galeria_piezas(df_con_ruta, key_prefix="gal_subidas")
 
     with tab_carpeta:
         st.caption(
@@ -790,23 +775,9 @@ def page_carga_masiva() -> None:
         if st.session_state.get("tabla_carpeta_datos") is not None:
             df_2026 = st.session_state["tabla_carpeta_datos"]
             st.success(f"Procesamiento completado: {len(df_2026)} registros.")
-            st.caption("Para ver una imagen completa: marcá el casillero (✓) al principio de la fila -- NO hagas clic/doble clic en la miniatura chiquita, esa vista no se puede agrandar bien.")
-            # Miniaturas solo sobre las primeras 20 filas que se muestran --
-            # generarlas para las 1.414 piezas completas sería lento y no se
-            # ven todas a la vez igual.
-            df_2026_vista = _agregar_miniaturas(df_2026.head(20))
-            evento = st.dataframe(
-                df_2026_vista.drop(columns=["ruta_local"], errors="ignore"),
-                use_container_width=True,
-                column_config={
-                    "miniatura": st.column_config.ImageColumn("Vista previa", width="small")
-                },
-                on_select="rerun",
-                selection_mode="single-row",
-                key="tabla_carpeta",
-            )
-            filas_sel = evento.selection.rows if evento and evento.selection else []
-            _mostrar_fila_seleccionada(df_2026_vista, filas_sel, "_ultima_fila_vista_carpeta")
+            df_2026_vista = df_2026.head(20)
+            st.dataframe(df_2026_vista.drop(columns=["ruta_local"], errors="ignore"), use_container_width=True)
+            _galeria_piezas(df_2026_vista, key_prefix="gal_carpeta")
             if os.path.exists(OUTPUT_EXCEL_PATH):
                 with open(OUTPUT_EXCEL_PATH, "rb") as file:
                     st.download_button(

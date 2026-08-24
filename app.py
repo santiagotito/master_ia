@@ -535,42 +535,55 @@ def _mostrar_pieza_dialog(ruta: str, nombre: str, tipo: str) -> None:
 _ICONOS_TIPO = {"Audio": "🎵", "Video": "🎬", "PDF": "📄"}
 
 
-def _galeria_piezas(df_con_ruta: pd.DataFrame, key_prefix: str, por_fila: int = 6) -> None:
-    """Miniaturas clickeables de verdad (botones nativos de Streamlit, no la
-    columna de imagen de st.dataframe): esa columna tiene su propio zoom
-    integrado que no se puede interceptar ni redirigir -- clickear la
-    miniatura ahí simplemente no llega nunca a nuestro código (confirmado
-    probándolo: la fila ni se seleccionaba). Acá el clic es un botón real,
-    así que si abre la ventana modal, para imagen, audio y video."""
+_ANCHOS_TABLA_PIEZAS = [1, 2.2, 2, 2.2, 1, 2.2, 1.1]
+
+
+def _tabla_con_miniaturas(df_con_ruta: pd.DataFrame, key_prefix: str) -> None:
+    """Tabla real, fila por fila, con la miniatura y el botón "Ver completo"
+    integrados como columnas más -- no se puede armar así con st.dataframe
+    (no permite poner un botón real adentro de una celda, y su propia
+    columna de imagen no deja interceptar el clic para nada propio,
+    confirmado probándolo). Se arma a mano con st.columns por fila, con
+    los datos clave visibles (el detalle completo con todas las
+    dimensiones/confianzas sigue en la tabla de arriba)."""
     if "ruta_local" not in df_con_ruta.columns or df_con_ruta.empty:
         return
-    st.caption("Tocá una miniatura para ver la pieza completa (imagen, audio o video).")
+
+    columnas_pred = [TARGET_COLS[cn] for cn in TARGET_COLS if TARGET_COLS[cn] in df_con_ruta.columns]
+
+    encabezado = st.columns(_ANCHOS_TABLA_PIEZAS)
+    for col, titulo in zip(
+        encabezado, ["Miniatura", "Archivo", "Anunciante", "Versión", "Tipo", "Predicción", ""]
+    ):
+        col.markdown(f"**{titulo}**")
+
     filas = df_con_ruta.reset_index(drop=True)
-    for inicio in range(0, len(filas), por_fila):
-        cols = st.columns(por_fila)
-        for offset, col in enumerate(cols):
-            idx = inicio + offset
-            if idx >= len(filas):
-                break
-            fila = filas.iloc[idx]
-            ruta = fila.get("ruta_local")
-            tipo = fila.get("tipo_archivo")
-            nombre = str(fila.get("archivo", ""))
-            with col, st.container(border=True):
-                if tipo == "Imagen" and ruta and os.path.exists(ruta):
-                    st.image(ruta, use_container_width=True)
+    for idx, fila in filas.iterrows():
+        ruta = fila.get("ruta_local")
+        tipo = fila.get("tipo_archivo")
+        nombre = str(fila.get("archivo", ""))
+        c_mini, c_archivo, c_anun, c_ver, c_tipo, c_pred, c_accion = st.columns(_ANCHOS_TABLA_PIEZAS)
+        with c_mini:
+            if tipo == "Imagen" and ruta and os.path.exists(ruta):
+                st.image(ruta, use_container_width=True)
+            else:
+                st.markdown(
+                    f"<div style='font-size:1.8rem; text-align:center;'>"
+                    f"{_ICONOS_TIPO.get(tipo, '📁')}</div>",
+                    unsafe_allow_html=True,
+                )
+        c_archivo.write(nombre[:35] + ("..." if len(nombre) > 35 else ""))
+        c_anun.write(fila.get("anunciante", ""))
+        c_ver.write(fila.get("version", ""))
+        c_tipo.write(tipo)
+        c_pred.write(", ".join(f"{c}: {fila[c]}" for c in columnas_pred if pd.notna(fila.get(c))))
+        with c_accion:
+            if st.button("🔍 Ver", key=f"{key_prefix}_{idx}", use_container_width=True):
+                if ruta and os.path.exists(ruta):
+                    _mostrar_pieza_dialog(ruta, nombre, tipo)
                 else:
-                    st.markdown(
-                        f"<div style='font-size:2.4rem; text-align:center; padding:14px 0;'>"
-                        f"{_ICONOS_TIPO.get(tipo, '📁')}</div>",
-                        unsafe_allow_html=True,
-                    )
-                st.caption(nombre if len(nombre) <= 28 else nombre[:25] + "...")
-                if st.button("🔍 Ver completo", key=f"{key_prefix}_{idx}", use_container_width=True):
-                    if ruta and os.path.exists(ruta):
-                        _mostrar_pieza_dialog(ruta, nombre, tipo)
-                    else:
-                        st.toast("No se pudo abrir el archivo.")
+                    st.toast("No se pudo abrir el archivo.")
+        st.divider()
 
 
 def page_carga_masiva() -> None:
@@ -733,8 +746,7 @@ def page_carga_masiva() -> None:
         if st.session_state.get("tabla_subidas_datos") is not None:
             df_con_ruta = st.session_state["tabla_subidas_datos"]
             st.success(f"Clasificación completada: {len(df_con_ruta)} piezas.")
-            st.dataframe(df_con_ruta.drop(columns=["ruta_local"]), use_container_width=True)
-            _galeria_piezas(df_con_ruta, key_prefix="gal_subidas")
+            _tabla_con_miniaturas(df_con_ruta, key_prefix="gal_subidas")
 
     with tab_carpeta:
         st.caption(
@@ -776,8 +788,7 @@ def page_carga_masiva() -> None:
             df_2026 = st.session_state["tabla_carpeta_datos"]
             st.success(f"Procesamiento completado: {len(df_2026)} registros.")
             df_2026_vista = df_2026.head(20)
-            st.dataframe(df_2026_vista.drop(columns=["ruta_local"], errors="ignore"), use_container_width=True)
-            _galeria_piezas(df_2026_vista, key_prefix="gal_carpeta")
+            _tabla_con_miniaturas(df_2026_vista, key_prefix="gal_carpeta")
             if os.path.exists(OUTPUT_EXCEL_PATH):
                 with open(OUTPUT_EXCEL_PATH, "rb") as file:
                     st.download_button(

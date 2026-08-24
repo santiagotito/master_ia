@@ -783,7 +783,13 @@ def page_carga_masiva() -> None:
                     st.session_state.pop("tabla_subidas_datos", None)
                 else:
                     df_subidas = _filtrar_columnas_seleccionadas(df_subidas, columnas_sel)
-                    st.session_state.last_batch_df = df_subidas.drop(columns=["ruta_local"])
+                    # Se conserva ruta_local en last_batch_df -- el archivo
+                    # temporal sigue existiendo mientras el servidor no se
+                    # reinicie (nada lo borra antes), así que otras páginas
+                    # (Revisión Manual, Dashboard) pueden seguir mostrando la
+                    # pieza real más tarde en la misma sesión. Se saca recién
+                    # al exportar a Excel (_boton_exportar_excel ya lo hace).
+                    st.session_state.last_batch_df = df_subidas
                     st.session_state.last_batch_path = None
                     st.cache_data.clear()
                     # Se guarda en session_state (con ruta_local incluido, para
@@ -1037,7 +1043,7 @@ def page_exportacion() -> None:
     if df is None or df.empty:
         st.warning("No hay predicciones para exportar. Ejecute Carga masiva.")
         return
-    st.dataframe(df.head(30), use_container_width=True)
+    st.dataframe(df.head(30).drop(columns=["ruta_local"], errors="ignore"), use_container_width=True)
     if path and os.path.exists(path):
         with open(path, "rb") as file:
             st.download_button(

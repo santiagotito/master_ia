@@ -536,12 +536,18 @@ def _mostrar_pieza_dialog(ruta: str, nombre: str, tipo: str) -> None:
 _ICONOS_TIPO = {"Audio": "🎵", "Video": "🎬", "PDF": "📄"}
 
 
+_ANCHO_COL_CHECK = 0.6
 _ANCHOS_BASE_TABLA_PIEZAS = [1, 1.5, 1.3, 1.5, 0.7]
 _ANCHO_COL_PREDICCION = 1.8
 _ANCHO_COL_ACCION = 1.1
 
 
-def _tabla_con_miniaturas(df_con_ruta: pd.DataFrame, key_prefix: str, models: dict | None = None) -> pd.DataFrame:
+def _tabla_con_miniaturas(
+    df_con_ruta: pd.DataFrame,
+    key_prefix: str,
+    models: dict | None = None,
+    tolerancia: float | None = None,
+) -> pd.DataFrame:
     """Tabla real, fila por fila, con la miniatura y el botón "Ver completo"
     integrados como columnas más -- no se puede armar así con st.dataframe
     (no permite poner un botón real adentro de una celda, y su propia
@@ -554,8 +560,20 @@ def _tabla_con_miniaturas(df_con_ruta: pd.DataFrame, key_prefix: str, models: di
     opciones tomadas del catálogo real que aprendió el modelo
     (`soporte_clases`, las mismas clases con las que se entrenó) -- no un
     campo de texto libre, para no romper el catálogo cerrado (AD-4) que
-    ya garantiza el resto del sistema. Devuelve una copia del DataFrame
-    con los valores editados aplicados, para poder exportarlos."""
+    ya garantiza el resto del sistema.
+
+    `tolerancia`: si se pasa, agrega una columna de checkbox al principio
+    de cada fila -- marcado solo mientras la confianza mínima de esa pieza
+    (la más baja entre sus dimensiones) esté por debajo de `tolerancia`.
+    Es un checkbox real, editable a mano -- pero se recalcula entero cada
+    vez que cambia `tolerancia`, así que un cambio manual se pierde si
+    después se mueve la barra de nuevo (se prioriza que la barra sea
+    predecible sobre preservar ediciones manuales del check entre
+    corridas de la barra).
+
+    Devuelve una copia del DataFrame con los valores editados aplicados
+    (dimensiones y, si `tolerancia` no es None, una columna booleana
+    "fase2" con el estado de cada checkbox), para poder exportarlos."""
     if df_con_ruta.empty:
         return df_con_ruta
     if "ruta_local" not in df_con_ruta.columns:
@@ -565,24 +583,53 @@ def _tabla_con_miniaturas(df_con_ruta: pd.DataFrame, key_prefix: str, models: di
         df_con_ruta = df_con_ruta.assign(ruta_local=None)
 
     dims_presentes = [cn for cn in TARGET_COLS if TARGET_COLS[cn] in df_con_ruta.columns]
+    columnas_conf = [f"conf_{cn}" for cn in dims_presentes if f"conf_{cn}" in df_con_ruta.columns]
     anchos = _ANCHOS_BASE_TABLA_PIEZAS + [_ANCHO_COL_PREDICCION] * len(dims_presentes) + [_ANCHO_COL_ACCION]
     etiquetas_dim = [TARGET_LABELS[cn].split("— ", 1)[-1] for cn in dims_presentes]
     soporte_clases = (models or {}).get("soporte_clases", {})
+    usa_check = tolerancia is not None and bool(columnas_conf)
+    if usa_check:
+        anchos = [_ANCHO_COL_CHECK] + anchos
+
+    filas = df_con_ruta.reset_index(drop=True)
+
+    if usa_check:
+        # Se recalculan todos los checks de este key_prefix cuando cambia la
+        # tolerancia (no solo al abrir la tabla) -- si no, mover la barra no
+        # actualizaría los checks ya renderizados en corridas anteriores.
+        tol_key = f"{key_prefix}_tolerancia_actual"
+        if st.session_state.get(tol_key) != tolerancia:
+            st.session_state[tol_key] = tolerancia
+            for i, fila_i in filas.iterrows():
+                confs = [fila_i.get(c) for c in columnas_conf if pd.notna(fila_i.get(c))]
+                st.session_state[f"{key_prefix}_check_{i}"] = bool(confs) and min(confs) < tolerancia
 
     encabezado = st.columns(anchos)
-    titulos = ["Miniatura", "Archivo", "Anunciante", "Versión", "Tipo"] + etiquetas_dim + [""]
+    titulos = (["Fase 2"] if usa_check else []) + [
+        "Miniatura", "Archivo", "Anunciante", "Versión", "Tipo"
+    ] + etiquetas_dim + [""]
     for col, titulo in zip(encabezado, titulos):
         col.markdown(f"**{titulo}**")
 
-    filas = df_con_ruta.reset_index(drop=True)
     editado = filas.copy()
+    if usa_check:
+        editado["fase2"] = False
     for idx, fila in filas.iterrows():
         ruta = fila.get("ruta_local")
         tipo = fila.get("tipo_archivo")
         nombre = str(fila.get("archivo", ""))
         cols_fila = st.columns(anchos)
-        c_mini, c_archivo, c_anun, c_ver, c_tipo = cols_fila[:5]
-        cols_dim = cols_fila[5:5 + len(dims_presentes)]
+        if usa_check:
+            c_check, c_mini, c_archivo, c_anun, c_ver, c_tipo = cols_fila[:6]
+            cols_dim = cols_fila[6:6 + len(dims_presentes)]
+            with c_check:
+                marcado = st.checkbox(
+                    "Fase 2", key=f"{key_prefix}_check_{idx}", label_visibility="collapsed"
+                )
+            editado.at[idx, "fase2"] = marcado
+        else:
+            c_mini, c_archivo, c_anun, c_ver, c_tipo = cols_fila[:5]
+            cols_dim = cols_fila[5:5 + len(dims_presentes)]
         c_accion = cols_fila[-1]
         with c_mini:
             if tipo == "Imagen" and ruta and os.path.exists(ruta):
@@ -642,6 +689,20 @@ def _boton_exportar_excel(df: pd.DataFrame, key: str, nombre_archivo: str = "cla
     )
 
 
+def _boton_exportar_fase2(df_editado: pd.DataFrame, key: str) -> None:
+    """Exporta solo las piezas marcadas con el check "Fase 2" -- la base
+    real de entrada para la siguiente etapa (revisión con IA), no las
+    1.414 piezas completas."""
+    if "fase2" not in df_editado.columns:
+        return
+    seleccion = df_editado[df_editado["fase2"] == True].drop(columns=["fase2"])  # noqa: E712
+    st.caption(f"{len(seleccion)} piezas marcadas para Fase 2.")
+    if seleccion.empty:
+        st.caption("Ninguna marcada todavía -- tildá el check de las filas que quieras mandar.")
+        return
+    _boton_exportar_excel(seleccion, key=key, nombre_archivo="base_fase2.xlsx")
+
+
 def page_carga_masiva() -> None:
     models = get_models()
     st.title("Carga masiva")
@@ -679,6 +740,17 @@ def page_carga_masiva() -> None:
     if not columnas_sel:
         st.warning("Seleccioná al menos una dimensión para clasificar.")
         return
+
+    tolerancia = st.slider(
+        "Tolerancia de confianza (%)",
+        40, 95, CONF_LOW,
+        help=(
+            "Cualquier pieza donde la dimensión menos segura quede por debajo de este valor se "
+            "marca automáticamente con el check \"Fase 2\" en la tabla de resultados -- son las "
+            "candidatas a mandar a revisión con IA. Podés destildar o tildar cualquiera a mano "
+            "antes de exportar; mover esta barra de nuevo vuelve a calcular todos los checks."
+        ),
+    )
 
     with st.expander("¿Querés clasificar por una columna nueva (ej. \"ciudad\")? Así se agrega"):
         st.markdown(
@@ -786,7 +858,7 @@ def page_carga_masiva() -> None:
                     # Se conserva ruta_local en last_batch_df -- el archivo
                     # temporal sigue existiendo mientras el servidor no se
                     # reinicie (nada lo borra antes), así que otras páginas
-                    # (Revisión Manual, Dashboard) pueden seguir mostrando la
+                    # (Dashboard, Exportación) pueden seguir mostrando la
                     # pieza real más tarde en la misma sesión. Se saca recién
                     # al exportar a Excel (_boton_exportar_excel ya lo hace).
                     st.session_state.last_batch_df = df_subidas
@@ -809,8 +881,14 @@ def page_carga_masiva() -> None:
             df_con_ruta = st.session_state["tabla_subidas_datos"]
             st.success(f"Clasificación completada: {len(df_con_ruta)} piezas.")
             st.caption("Podés corregir cualquier valor tocándolo en la tabla antes de exportar.")
-            df_subidas_editado = _tabla_con_miniaturas(df_con_ruta, key_prefix="gal_subidas", models=models)
-            _boton_exportar_excel(df_subidas_editado, key="descarga_subidas")
+            df_subidas_editado = _tabla_con_miniaturas(
+                df_con_ruta, key_prefix="gal_subidas", models=models, tolerancia=tolerancia
+            )
+            col_exp_a, col_exp_b = st.columns(2)
+            with col_exp_a:
+                _boton_exportar_excel(df_subidas_editado, key="descarga_subidas")
+            with col_exp_b:
+                _boton_exportar_fase2(df_subidas_editado, key="descarga_subidas_fase2")
 
     with tab_carpeta:
         st.caption(
@@ -865,18 +943,22 @@ def page_carga_masiva() -> None:
                 "cualquier valor tocándolo en la tabla antes de exportar."
             )
             df_2026_vista = df_2026.head(20)
-            df_carpeta_editado = _tabla_con_miniaturas(df_2026_vista, key_prefix="gal_carpeta", models=models)
-            col_exp1, col_exp2 = st.columns(2)
+            df_carpeta_editado = _tabla_con_miniaturas(
+                df_2026_vista, key_prefix="gal_carpeta", models=models, tolerancia=tolerancia
+            )
+            col_exp1, col_exp2, col_exp3 = st.columns(3)
             with col_exp1:
                 _boton_exportar_excel(
                     df_carpeta_editado, key="descarga_carpeta_vista",
                     nombre_archivo="clasificacion_primeras_20.xlsx",
                 )
             with col_exp2:
+                _boton_exportar_fase2(df_carpeta_editado, key="descarga_carpeta_fase2")
+            with col_exp3:
                 if os.path.exists(OUTPUT_EXCEL_PATH):
                     with open(OUTPUT_EXCEL_PATH, "rb") as file:
                         st.download_button(
-                            f"📥 Descargar Excel completo ({len(df_2026)} piezas, sin ediciones)",
+                            f"📥 Excel completo ({len(df_2026)} piezas, sin ediciones)",
                             data=file,
                             file_name="Predicciones_2026_ML.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -993,34 +1075,6 @@ def page_matriz() -> None:
         except Exception as exc:
             log_exception("Matriz de clasificación", exc)
             st.error(str(exc))
-
-
-def page_revision_manual() -> None:
-    models = get_models()
-    st.title("Revisión manual")
-    st.caption(
-        "Piezas donde el modelo rápido (ML) no quedó lo bastante seguro -- se juntan acá para que "
-        "alguien las revise y corrija a mano, en vez de dejarlas con una predicción dudosa."
-    )
-    df, is_demo = dashboard_frame()
-    conf_map = confidence_columns(df)
-    if not conf_map:
-        st.info("Aún no hay columnas de confianza. Ejecute una carga masiva.")
-        return
-
-    umbral = st.slider("Umbral de certeza mínima (%)", 40, 90, CONF_LOW)
-    mask = pd.Series(False, index=df.index)
-    for col in conf_map.values():
-        mask = mask | (pd.to_numeric(df[col], errors="coerce") < umbral)
-    cola = df.loc[mask]
-    st.metric("Casos a revisar", len(cola))
-    if is_demo:
-        st.caption("Cola construida sobre la vista de referencia.")
-
-    if not cola.empty:
-        st.caption("Corregí lo que haga falta en la tabla y exportá el resultado revisado.")
-        cola_editada = _tabla_con_miniaturas(cola, key_prefix="revision", models=models)
-        _boton_exportar_excel(cola_editada, key="descarga_revision", nombre_archivo="revision_manual.xlsx")
 
 
 def page_explorador() -> None:
@@ -1143,7 +1197,6 @@ pages = {
     ],
     "CLASIFICACIÓN & GOVERNANCE": [
         st.Page(page_matriz, title="Matriz de Clasificación", icon="🗂️"),
-        st.Page(page_revision_manual, title="Revisión Manual", icon="🧑‍⚖️"),
     ],
     "BIBLIOTECA DE ACTIVOS": [
         st.Page(page_explorador, title="Explorador de Medios", icon="🖼️"),

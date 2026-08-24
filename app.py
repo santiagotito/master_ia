@@ -705,7 +705,7 @@ def page_carga_masiva() -> None:
         if st.session_state.get("tabla_subidas_datos") is not None:
             df_con_ruta = st.session_state["tabla_subidas_datos"]
             st.success(f"Clasificación completada: {len(df_con_ruta)} piezas.")
-            st.caption("Tocá una fila de la tabla para ver la imagen completa abajo.")
+            st.caption("Para ver una imagen completa: marcá el casillero (✓) al principio de la fila -- NO hagas clic/doble clic en la miniatura chiquita, esa vista no se puede agrandar bien.")
             df_subidas_vista = _agregar_miniaturas(df_con_ruta).drop(columns=["ruta_local"])
             evento = st.dataframe(
                 df_subidas_vista,
@@ -765,7 +765,7 @@ def page_carga_masiva() -> None:
         if st.session_state.get("tabla_carpeta_datos") is not None:
             df_2026 = st.session_state["tabla_carpeta_datos"]
             st.success(f"Procesamiento completado: {len(df_2026)} registros.")
-            st.caption("Tocá una fila de la tabla para ver la imagen completa abajo.")
+            st.caption("Para ver una imagen completa: marcá el casillero (✓) al principio de la fila -- NO hagas clic/doble clic en la miniatura chiquita, esa vista no se puede agrandar bien.")
             # Miniaturas solo sobre las primeras 20 filas que se muestran --
             # generarlas para las 1.414 piezas completas sería lento y no se
             # ven todas a la vez igual.

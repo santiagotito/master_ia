@@ -1,3 +1,4 @@
+import base64
 import glob
 import importlib
 import os
@@ -515,6 +516,35 @@ def _filtrar_columnas_seleccionadas(df: pd.DataFrame, columnas_sel: list[str]) -
     return df.drop(columns=drop_cols) if drop_cols else df
 
 
+def _agregar_miniaturas(df: pd.DataFrame, col_ruta: str = "ruta_local") -> pd.DataFrame:
+    """Agrega una columna "miniatura" al principio de la tabla con la imagen
+    de cada pieza (solo tipo Imagen -- audio/video/PDF no tienen una vista
+    previa estática que tenga sentido). Se muestra con
+    `st.column_config.ImageColumn`, que ya trae el "click para ampliar"
+    integrado -- no hace falta programarlo aparte."""
+    if "tipo_archivo" not in df.columns or col_ruta not in df.columns:
+        return df
+
+    def _thumb(row):
+        if row.get("tipo_archivo") != "Imagen":
+            return None
+        ruta = row.get(col_ruta)
+        if not ruta or not os.path.exists(ruta):
+            return None
+        try:
+            with open(ruta, "rb") as f:
+                datos = f.read()
+            ext = os.path.splitext(ruta)[1].lower().lstrip(".")
+            mime = "jpeg" if ext == "jpg" else ext
+            return f"data:image/{mime};base64,{base64.b64encode(datos).decode('ascii')}"
+        except Exception:
+            return None
+
+    df = df.copy()
+    df.insert(0, "miniatura", df.apply(_thumb, axis=1))
+    return df
+
+
 def page_carga_masiva() -> None:
     models = get_models()
     st.title("Carga masiva")
@@ -552,6 +582,22 @@ def page_carga_masiva() -> None:
     if not columnas_sel:
         st.warning("Seleccioná al menos una dimensión para clasificar.")
         return
+
+    with st.expander("¿Querés clasificar por una columna nueva (ej. \"ciudad\")? Así se agrega"):
+        st.markdown(
+            "Estas 4 dimensiones (J/K/L/M) ya tienen años de datos históricos, por eso se "
+            "clasifican solas y al instante acá. Una columna nueva no tiene ese historial, así "
+            "que no se puede entrenar un modelo rápido para ella -- se agrega con estos pasos:\n\n"
+            "**a.** Alguien del equipo define la columna nueva en Colab: su nombre (ej. "
+            "\"ciudad\") y la lista cerrada de valores válidos (ej. Quito, Guayaquil, Cuenca...) "
+            "-- así la IA nunca puede inventar un valor que no está en la lista.\n\n"
+            "**b.** Se corre la clasificación de esa columna sobre las piezas, en Colab (necesita "
+            "GPU, por eso no se hace desde acá).\n\n"
+            "**c.** Se exporta el resultado a un Excel, con la columna nueva agregada junto a J/K/L/M.\n\n"
+            "**d.** Ese Excel se sube en \"Ver resultados completos\" → \"¿Necesitás clasificar "
+            "piezas nuevas con IA?\" -- la columna nueva va a aparecer en la tabla sin que haga "
+            "falta ningún cambio más acá."
+        )
 
     st.write("")
 
@@ -638,15 +684,24 @@ def page_carga_masiva() -> None:
                 if df_subidas.empty:
                     st.warning("Ninguno de los archivos subidos tiene una extensión reconocida.")
                 else:
-                    # ruta_local apunta a una carpeta temporal que se borra al
-                    # cerrar la sesión -- no tiene sentido mostrarla ni
-                    # exportarla, solo ensucia la tabla.
-                    df_subidas = _filtrar_columnas_seleccionadas(df_subidas, columnas_sel).drop(columns=["ruta_local"])
+                    df_subidas = _filtrar_columnas_seleccionadas(df_subidas, columnas_sel)
+                    # La miniatura se arma ANTES de tirar ruta_local (la
+                    # necesita para leer el archivo real) -- ruta_local en sí
+                    # apunta a una carpeta temporal que se borra al cerrar la
+                    # sesión, no tiene sentido mostrarla ni exportarla.
+                    df_subidas_vista = _agregar_miniaturas(df_subidas).drop(columns=["ruta_local"])
+                    df_subidas = df_subidas.drop(columns=["ruta_local"])
                     st.session_state.last_batch_df = df_subidas
                     st.session_state.last_batch_path = None
                     st.cache_data.clear()
                     st.success(f"Clasificación completada: {len(df_subidas)} piezas.")
-                    st.dataframe(df_subidas, use_container_width=True)
+                    st.dataframe(
+                        df_subidas_vista,
+                        use_container_width=True,
+                        column_config={
+                            "miniatura": st.column_config.ImageColumn("Vista previa", width="small")
+                        },
+                    )
             except Exception as exc:
                 log_exception("Carga masiva / piezas subidas", exc)
                 record_inference("TF-IDF", 0, False, str(exc))
@@ -677,7 +732,16 @@ def page_carga_masiva() -> None:
                     st.session_state.last_batch_path = str(output_file)
                     st.cache_data.clear()
                     st.success(f"Procesamiento completado: {len(df_2026)} registros.")
-                    st.dataframe(df_2026.head(20), use_container_width=True)
+                    # Miniaturas solo sobre las primeras 20 filas que se
+                    # muestran -- generarlas para las 1.414 piezas completas
+                    # sería lento y no se ven todas a la vez igual.
+                    st.dataframe(
+                        _agregar_miniaturas(df_2026.head(20)),
+                        use_container_width=True,
+                        column_config={
+                            "miniatura": st.column_config.ImageColumn("Vista previa", width="small")
+                        },
+                    )
                     with open(output_file, "rb") as file:
                         st.download_button(
                             "Descargar Excel de predicciones",

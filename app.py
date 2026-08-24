@@ -902,21 +902,6 @@ def page_carga_masiva() -> None:
                         st.error(str(exc))
 
 
-def page_monitor_extraccion() -> None:
-    st.title("Monitor de extracción")
-    st.caption("Parseo de nombres de archivo y cobertura de la carpeta multi-modal.")
-    inv = inventory_files()
-    if inv.empty:
-        st.info(f"No hay archivos en `{PIEZAS_DIR}`.")
-        return
-
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Archivos detectados", len(inv))
-    c2.metric("Con anunciante", int((inv["anunciante"].astype(str).str.len() > 0).sum()))
-    c3.metric("Formatos", inv["tipo_archivo"].nunique())
-    st.dataframe(inv, use_container_width=True, hide_index=True)
-
-
 def page_matriz() -> None:
     models = get_models()
     st.title("Matriz de clasificación")
@@ -1094,7 +1079,6 @@ pages = {
     ],
     "INGESTA MULTI-MODAL": [
         PAGE_CARGA_MASIVA,
-        st.Page(page_monitor_extraccion, title="Monitor de Extracción", icon="📡"),
     ],
     "CLASIFICACIÓN & GOVERNANCE": [
         st.Page(page_matriz, title="Matriz de Clasificación", icon="🗂️"),

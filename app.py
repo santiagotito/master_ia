@@ -1086,6 +1086,28 @@ def page_pipelines() -> None:
 
     st.subheader("Reentrenamiento")
     st.info("Carga el histórico, vectoriza con TF-IDF y reentrena las canalizaciones J, K, L y M.")
+    st.caption(
+        "El entrenamiento **solo necesita el Excel histórico** (anunciante + versión + la "
+        "categoría real ya conocida de cada uno) -- no hace falta subir los archivos de las "
+        "piezas (imágenes, audio, video) para esto, ese es un paso aparte (Carga Masiva)."
+    )
+    excel_subido = st.file_uploader(
+        "¿Entrenar con un Excel distinto al de por defecto? Subilo acá (opcional)",
+        type=["xlsx", "xlsm"],
+        help=(
+            "Si no subís nada, entrena con el Excel que ya está guardado en el servidor "
+            "(Subbase UIDE Oct 2025.xlsm). Subir uno acá no reemplaza ese archivo -- solo se usa "
+            "para esta corrida de entrenamiento."
+        ),
+    )
+    ruta_excel_entrenamiento = None
+    if excel_subido is not None:
+        tmp_dir = tempfile.mkdtemp(prefix="entrenamiento_")
+        ruta_excel_entrenamiento = os.path.join(tmp_dir, excel_subido.name)
+        with open(ruta_excel_entrenamiento, "wb") as f:
+            f.write(excel_subido.getbuffer())
+        st.success(f"Se va a entrenar con: {excel_subido.name}")
+
     if st.button("Iniciar entrenamiento completo", type="primary"):
         log_container = st.empty()
         try:
@@ -1107,7 +1129,7 @@ def page_pipelines() -> None:
                         pass
 
                 sys.stdout = StreamToST(log_container)
-                trainer.main()
+                trainer.main(excel_path=ruta_excel_entrenamiento)
                 sys.stdout = sys.__stdout__
                 st.cache_resource.clear()
                 st.success("Entrenamiento completado. Recargue el dashboard para usar el nuevo pipeline.")

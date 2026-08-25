@@ -170,18 +170,21 @@ def preparar_datos_y_entrenar(excel_path):
     # ==============================================================================
 # PUNTO DE ENTRADA PRINCIPAL PARA STREAMLIT / CONSOLA
 # ==============================================================================
-def main():
-    """Inicia el proceso completo de entrenamiento utilizando la ruta configurada."""
+def main(excel_path=None):
+    """Inicia el proceso completo de entrenamiento. `excel_path` permite
+    entrenar con un Excel distinto al configurado por defecto (ej. uno
+    subido a mano desde la app) -- si no se pasa, usa EXCEL_PATH."""
+    excel_path = excel_path or EXCEL_PATH
     print("Iniciando entrenamiento de modelos...")
-    metricas = train_and_save_models(EXCEL_PATH, MODEL_PATH)
-    
+    metricas = train_and_save_models(excel_path, MODEL_PATH)
+
     # Asegurar que el directorio de gráficos exista
     os.makedirs(GRAFICOS_DIR, exist_ok=True)
 
     # 1. Cargar y limpiar el DataFrame (asigna el resultado a df_clean)
     # Reemplaza 'cargar_datos()' por la función real que usas en tu proyecto
     # df_clean = load_and_preprocess_data()
-    df_clean, final_models, X_test, y_tests = preparar_datos_y_entrenar(EXCEL_PATH)
+    df_clean, final_models, X_test, y_tests = preparar_datos_y_entrenar(excel_path)
 
     # 2. Ejecutar entrenamiento y división de datos
     # Reemplaza esta línea por tu lógica real para obtener los modelos y sets de prueba

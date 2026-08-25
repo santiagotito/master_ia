@@ -86,6 +86,7 @@ def train_and_save_models(excel_path, output_model_path=MODEL_PATH):
 
     models = {}
     metrics = {}
+    soporte_clases = {}
 
     for cn, col in TARGET_COLS.items():
         bp = best_params.get(cn, {'ngram': (1, 2), 'max_feat': 10000, 'C': 1.0})
@@ -102,18 +103,23 @@ def train_and_save_models(excel_path, output_model_path=MODEL_PATH):
                 cv=None
             ))
         ])
-        
+
         pipe.fit(X_all, y_col)
         models[cn] = pipe
-        
+
+        clases, cuentas = np.unique(y_col, return_counts=True)
+        soporte_clases[col] = dict(zip(clases.tolist(), cuentas.tolist()))
+
         y_pred = pipe.predict(X_all)
         metrics[cn] = {
             'Accuracy': accuracy_score(y_col, y_pred),
             'F1 Weighted': f1_score(y_col, y_pred, average='weighted', zero_division=0)
         }
 
-        # Guardar modelo final (.pkl)
-    joblib.dump(models, output_model_path)
+        # Guardar modelo final (.pkl) -- incluye soporte_clases (Story: selector de
+        # modelos guardados) para que un .pkl cargado después pueda aplicar el mismo
+        # umbral de confianza + soporte mínimo que el modelo entrenado en vivo.
+    joblib.dump({"pipelines": models, "soporte_clases": soporte_clases}, output_model_path)
     print(f"✅ Modelos guardados en: {output_model_path}")
     
     # 📊 Guardar matrices de confusión y gráficos de diagnóstico
@@ -170,13 +176,17 @@ def preparar_datos_y_entrenar(excel_path):
     # ==============================================================================
 # PUNTO DE ENTRADA PRINCIPAL PARA STREAMLIT / CONSOLA
 # ==============================================================================
-def main(excel_path=None):
+def main(excel_path=None, output_model_path=None):
     """Inicia el proceso completo de entrenamiento. `excel_path` permite
     entrenar con un Excel distinto al configurado por defecto (ej. uno
-    subido a mano desde la app) -- si no se pasa, usa EXCEL_PATH."""
+    subido a mano desde la app) -- si no se pasa, usa EXCEL_PATH.
+    `output_model_path` permite guardar el .pkl resultante con otro nombre
+    (ej. un modelo guardado aparte, seleccionable luego en la app) -- si no
+    se pasa, pisa el modelo por defecto (MODEL_PATH)."""
     excel_path = excel_path or EXCEL_PATH
+    output_model_path = output_model_path or MODEL_PATH
     print("Iniciando entrenamiento de modelos...")
-    metricas = train_and_save_models(excel_path, MODEL_PATH)
+    metricas = train_and_save_models(excel_path, output_model_path)
 
     # Asegurar que el directorio de gráficos exista
     os.makedirs(GRAFICOS_DIR, exist_ok=True)

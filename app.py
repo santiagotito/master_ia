@@ -2,12 +2,14 @@ import glob
 import importlib
 import io
 import os
+import re
 import sys
 import tempfile
 import time
 from datetime import datetime, timedelta
 
 import altair as alt
+import joblib
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -26,6 +28,7 @@ except ImportError:
 from src.config import (
     GRAFICOS_DIR,
     MODEL_PATH,
+    MODELS_DIR,
     OUTPUT_EXCEL_PATH,
     PIEZAS_DIR,
     TARGET_COLS,
@@ -101,11 +104,67 @@ def inject_styles() -> None:
 # CARGA DE MODELOS (CACHE)
 # ------------------------------------------------------------------------------
 @st.cache_resource
-def get_models():
+def get_models(nombre_archivo=None):
+    """`nombre_archivo=None` (por defecto): reentrena en vivo con el histórico
+    actual (`load_trained_models()`, ignora cualquier .pkl -- ver su docstring).
+    `nombre_archivo`: nombre de un .pkl guardado bajo MODELS_DIR (ver
+    `_listar_modelos_guardados()`) -- lo carga tal cual quedó al entrenarlo,
+    sin reentrenar. `@st.cache_resource` cachea un resultado distinto por
+    cada valor de `nombre_archivo`."""
     try:
+        if nombre_archivo:
+            ruta = os.path.join(str(MODELS_DIR), nombre_archivo)
+            data = joblib.load(ruta)
+            return {"pipelines": data["pipelines"], "soporte_clases": data["soporte_clases"]}
         return load_trained_models()
     except Exception:
         return None
+
+
+def _slugify_nombre_modelo(nombre: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9_-]+", "_", nombre.strip()).strip("_")
+    return slug or datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def _listar_modelos_guardados():
+    """Modelos entrenados y guardados con nombre (prefijo `modelo_`), más
+    recientes primero -- distintos del artefacto por defecto (MODEL_PATH,
+    `model_pipelines.pkl`), que ninguna página lee de disco (siempre se
+    reentrena en vivo, ver `load_trained_models()`)."""
+    return sorted(
+        glob.glob(os.path.join(str(MODELS_DIR), "modelo_*.pkl")),
+        key=os.path.getmtime,
+        reverse=True,
+    )
+
+
+def _selector_modelo(key: str):
+    """Selectbox reutilizable (Carga Masiva / Matriz de Clasificación) para
+    elegir entre el modelo por defecto (en vivo) y cualquier modelo guardado
+    con nombre desde Estado de Pipelines. Devuelve el diccionario de modelos
+    ya cargado, listo para pasar a las funciones de predicción."""
+    rutas = _listar_modelos_guardados()
+    opciones = ["__default__"] + rutas
+    etiquetas = {"__default__": "⚡ Modelo por defecto (entrena en vivo)"}
+    for ruta in rutas:
+        base = os.path.splitext(os.path.basename(ruta))[0]
+        nombre = base[len("modelo_"):] if base.startswith("modelo_") else base
+        marca = datetime.fromtimestamp(os.path.getmtime(ruta)).strftime("%d/%m %H:%M")
+        etiquetas[ruta] = f"📦 {nombre} ({marca})"
+
+    seleccion = st.selectbox(
+        "Modelo entrenado",
+        options=opciones,
+        format_func=lambda k: etiquetas.get(k, k),
+        key=key,
+        help=(
+            "Elegí uno de tus modelos guardados con nombre (se guardan desde \"Estado de "
+            "Pipelines\" al reentrenar) o dejá el modelo por defecto, que reentrena en vivo con "
+            "el histórico actual del servidor."
+        ),
+    )
+    nombre_archivo = None if seleccion == "__default__" else os.path.basename(seleccion)
+    return get_models(nombre_archivo)
 
 
 def init_session() -> None:
@@ -676,10 +735,10 @@ def _boton_exportar_fase2(df_editado: pd.DataFrame, key: str) -> None:
 
 
 def page_carga_masiva() -> None:
-    models = get_models()
     st.title("Carga masiva")
     st.caption("Elegí el modelo, subí tus piezas o un Excel, y generá las predicciones.")
 
+    models = _selector_modelo("modelo_carga_masiva")
     if models is None:
         st.error("Modelos no cargados. Entrene el pipeline en Estado de Pipelines.")
 
@@ -975,12 +1034,13 @@ _TIPO_PREVIEW_POR_EXT = {
 
 
 def page_matriz() -> None:
-    models = get_models()
     st.title("Matriz de clasificación")
     st.caption(
         "Inferencia individual sobre las dimensiones J, K, L y M -- subí una pieza real (imagen, "
         "audio o video) para ver cómo la clasifica, o probá con texto a mano."
     )
+
+    models = _selector_modelo("modelo_matriz")
 
     archivo_subido = st.file_uploader(
         "Subí una pieza real para clasificar (opcional)",
@@ -1108,8 +1168,24 @@ def page_pipelines() -> None:
             f.write(excel_subido.getbuffer())
         st.success(f"Se va a entrenar con: {excel_subido.name}")
 
+    nombre_modelo = st.text_input(
+        "Nombre para guardar este modelo (opcional)",
+        placeholder=f"ej. solo_posgrado, entrenamiento_{datetime.now().strftime('%d%m')}",
+        help=(
+            "Si le ponés un nombre, este entrenamiento se guarda como un modelo aparte (no pisa "
+            "el que ya está en uso) y va a aparecer para elegir en \"Carga Masiva\" y \"Matriz de "
+            "Clasificación\". Se guarda en el disco persistente del servidor, así que sigue ahí "
+            "aunque la app se reinicie. Si lo dejás vacío, se reentrena el modelo por defecto."
+        ),
+    )
+
     if st.button("Iniciar entrenamiento completo", type="primary"):
         log_container = st.empty()
+        ruta_salida = (
+            os.path.join(str(MODELS_DIR), f"modelo_{_slugify_nombre_modelo(nombre_modelo)}.pkl")
+            if nombre_modelo.strip()
+            else str(MODEL_PATH)
+        )
         try:
             with st.spinner("Entrenando modelos y generando gráficos..."):
                 import src.trainer as trainer
@@ -1129,14 +1205,43 @@ def page_pipelines() -> None:
                         pass
 
                 sys.stdout = StreamToST(log_container)
-                trainer.main(excel_path=ruta_excel_entrenamiento)
+                trainer.main(excel_path=ruta_excel_entrenamiento, output_model_path=ruta_salida)
                 sys.stdout = sys.__stdout__
                 st.cache_resource.clear()
-                st.success("Entrenamiento completado. Recargue el dashboard para usar el nuevo pipeline.")
+                if nombre_modelo.strip():
+                    st.success(
+                        f"Modelo guardado como \"{nombre_modelo.strip()}\". "
+                        "Ya podés elegirlo en Carga Masiva y Matriz de Clasificación."
+                    )
+                else:
+                    st.success("Entrenamiento completado. Recargue el dashboard para usar el nuevo pipeline.")
         except Exception as exc:
             sys.stdout = sys.__stdout__
             log_exception("Entrenamiento", exc)
             st.error(f"Error durante el entrenamiento: {exc}")
+
+    st.subheader("Modelos guardados")
+    modelos_guardados = _listar_modelos_guardados()
+    if not modelos_guardados:
+        st.caption(
+            "Todavía no guardaste ningún modelo con nombre -- el modelo por defecto se reentrena "
+            "en vivo cada vez que arranca la app."
+        )
+    else:
+        filas = []
+        for ruta in modelos_guardados:
+            base = os.path.splitext(os.path.basename(ruta))[0]
+            nombre = base[len("modelo_"):] if base.startswith("modelo_") else base
+            filas.append({
+                "Nombre": nombre,
+                "Guardado": datetime.fromtimestamp(os.path.getmtime(ruta)).strftime("%d/%m/%Y %H:%M"),
+                "Tamaño": f"{os.path.getsize(ruta) / 1024:.0f} KB",
+            })
+        st.dataframe(pd.DataFrame(filas), use_container_width=True, hide_index=True)
+        st.caption(
+            "Estos modelos se guardan en el disco persistente del servidor (Railway Volume): "
+            "sobreviven a un redeploy o reinicio de la app."
+        )
 
     if os.path.exists(GRAFICOS_DIR):
         images = sorted(glob.glob(os.path.join(GRAFICOS_DIR, "*.png")))
